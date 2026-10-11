@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "herdr Multi-Agent Workflow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "Requirement to PASS",
+        "focus": ["request", "start", "design", "spawn", "build", "gate", "verify", "finish"],
+        "note": "One run from requirement to PASS. Tech-lead plans; orchestrator starts roles."
+      },
+      {
+        "id": "fix-loop",
+        "label": "FAIL to retest",
+        "focus": ["gate", "build", "verify"],
+        "note": "A FAIL verdict sends the fix to the owning dev, then QA retests."
+      },
+      {
+        "id": "human-gate",
+        "label": "Human gate",
+        "focus": ["gate", "escalate", "finish"],
+        "note": "Only escalations and the round limit reach the human."
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "orch", "label": "Orchestrator (your pane)" },
+    { "id": "lead", "label": "tech-lead (persistent)" },
+    { "id": "workers", "label": "Devs + QA (ephemeral)" }
+  ],
+  "phases": [
+    { "id": "phase-start", "label": "Start + design", "fromCol": 0, "toCol": 1 },
+    { "id": "phase-build", "label": "Build", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "phase-verify", "label": "Review + QA", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["request", "start", "design", "spawn", "build", "gate", "verify"],
+  "nodes": [
+    { "id": "request", "lane": "orch", "col": 0, "type": "external", "label": "Human", "sublabel": "gives requirement", "width": 140 },
+    { "id": "start", "lane": "orch", "col": 1, "type": "backend", "label": "Start run", "sublabel": "task folder + tabs.json", "width": 140 },
+    { "id": "design", "lane": "lead", "col": 1, "type": "backend", "label": "Design", "sublabel": "design.md + ticket list", "tag": "backend | frontend", "width": 140 },
+    { "id": "spawn", "lane": "orch", "col": 2, "type": "messagebus", "label": "Route + spawn", "sublabel": "routes outbox JSON", "width": 140 },
+    { "id": "build", "lane": "workers", "col": 2, "type": "backend", "label": "Build tickets", "sublabel": "code, tests, commit", "width": 140 },
+    { "id": "gate", "lane": "lead", "col": 4, "type": "backend", "label": "Review + verdict", "sublabel": "after both reports", "tag": "PASS or FAIL", "width": 140 },
+    { "id": "verify", "lane": "workers", "col": 5, "type": "security", "label": "QA verify", "sublabel": "merge branches, run tests", "width": 140 },
+    { "id": "escalate", "lane": "orch", "col": 4, "type": "external", "label": "Human decides", "sublabel": "questions + round limit", "width": 140 },
+    { "id": "finish", "lane": "orch", "col": 5, "type": "external", "label": "Run ends", "sublabel": "close tabs, keep worktrees", "width": 140 }
+  ],
+  "edges": [
+    { "id": "task-in", "from": "request", "to": "start", "label": "requirement", "variant": "default", "role": "main" },
+    { "id": "start-lead", "from": "start", "to": "design", "label": "start tech-lead", "variant": "emphasis", "role": "main" },
+    { "id": "spawn-req", "from": "design", "to": "spawn", "label": "spawn request", "variant": "default", "role": "main" },
+    { "id": "spawn-dev", "from": "spawn", "to": "build", "label": "worktree + turn", "variant": "emphasis", "role": "main", "bias": 0.25 },
+    { "id": "report", "from": "build", "to": "gate", "label": "report", "variant": "default", "role": "return" },
+    { "id": "spawn-qa", "from": "gate", "to": "verify", "label": "spawn QA", "variant": "emphasis", "role": "main" },
+    { "id": "verdict", "from": "verify", "to": "gate", "label": "verdict", "variant": "dashed", "role": "return" },
+    { "id": "pass", "from": "gate", "to": "finish", "label": "PASS: complete", "variant": "emphasis", "role": "main" },
+    { "id": "fix", "from": "gate", "to": "build", "label": "FAIL: fix spawn", "variant": "security", "role": "branch" },
+    { "id": "escalation", "from": "gate", "to": "escalate", "label": "escalation", "variant": "security", "role": "branch" },
+    { "id": "answer", "from": "escalate", "to": "gate", "label": "answer", "variant": "dashed", "role": "return" }
+  ]
+}

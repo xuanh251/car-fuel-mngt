@@ -1,0 +1,67 @@
+{
+  "_comment": "Multi-agent team config. Read by the orchestrator, which is the current agent (not a script). Each role picks its own agent kind and native CLI args. Lifecycle: tech-lead is persistent; backend_dev, frontend_dev and qa_engineer are ephemeral. An ephemeral role is stopped and its tab closed after its final message (report or verdict). It starts again only when tech-lead sends spawn for it, with a fresh context and the task from that spawn. {task} in a task text is the run folder .herdr/tasks/<task-id>; the orchestrator replaces it when it builds the prompt. Worktrees and branches stay. See README.md.",
+  "timeoutMs": 1800000,
+  "startTimeoutMs": 120000,
+  "maxRounds": 5,
+  "roles": {
+    "tech-lead": {
+      "kind": "claude",
+      "lifecycle": "persistent",
+      "cwd": ".",
+      "args": [
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "prompt": "agents/tech-lead.md",
+      "task": "Read the feature requirement at `{task}/requirement.md`. Produce a concise technical design (stack, data models, key APIs, non-goals, risks) and a flat ticket list. Tag each ticket exactly once as `backend` or `frontend`. Respect the layout constraint in the requirement (backend in `backend/`, frontend in `frontend/`). Do NOT implement anything yet. Write the design doc and ticket list to `{task}/design.md`. Then send a spawn request to the orchestrator for `backend_dev` and `frontend_dev`. Answer their questions yourself when the design decides them; escalate to the orchestrator only what you cannot resolve. When both have reported done, spawn `qa_engineer`. Route QA findings to the dev who owns them: spawn that dev with the fix in its task. Then spawn `qa_engineer` with a retest task. Send `complete` to the orchestrator only after QA reports PASS with no open issues."
+    },
+    "backend_dev": {
+      "kind": "claude",
+      "lifecycle": "ephemeral",
+      "worktree": true,
+      "cwd": ".",
+      "args": [
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "prompt": "agents/be.md",
+      "task": "Read `{task}/design.md`. Take the `backend`-tagged tickets and implement them: production-ready server code, data model, core business logic, and passing unit + integration tests. If the task needs a small frontend scaffold, add only the minimal glue the backend contract implies. Write the API contract summary to `{task}/api.md`. If blocked or unsure, send a `question` to tech-lead and wait for its answer. When the tickets are done and tests pass, commit and send a `report` to tech-lead with a short summary and the test result. A later spawn from tech-lead carries a fix; handle it the same way."
+    },
+    "frontend_dev": {
+      "kind": "claude",
+      "lifecycle": "ephemeral",
+      "worktree": true,
+      "cwd": ".",
+      "args": [
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "prompt": "agents/fe.md",
+      "task": "Read `{task}/design.md` and `{task}/api.md` if it exists. Take the `frontend`-tagged tickets and build a polished, responsive UI wired to the backend APIs. Include component and end-to-end tests covering the main flows. If blocked or unsure, send a `question` to tech-lead and wait for its answer. When builds and tests pass, commit and send a `report` to tech-lead with a short summary and the test result. A later spawn from tech-lead carries a fix; handle it the same way."
+    },
+    "qa_engineer": {
+      "kind": "claude",
+      "lifecycle": "ephemeral",
+      "cwd": ".",
+      "args": [
+        "--model",
+        "haiku",
+        "--permission-mode",
+        "bypassPermissions"
+      ],
+      "prompt": "agents/qa.md",
+      "task": "Read `{task}/design.md` for the original requirements. Merge the team branches listed in your Environment into your checkout (`git merge --no-edit <branch>`), then run integration + end-to-end tests. Attack edge cases and invalid inputs. Write every bug with reproduction steps and expected-vs-actual results to `{task}/qa-report.md`. Send a `verdict` to tech-lead whose body starts with PASS or FAIL, followed by the findings. On a spawn for retest, re-merge the branches first, then run the tests again.",
+      "worktree": true,
+      "merge": [
+        "backend_dev",
+        "frontend_dev"
+      ]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "agentGuidance": false,
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["PORT", "DATABASE_PATH", "NODE_ENV", "VITE_API_TARGET"]
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "test": {
+      "dependsOn": ["^build"]
+    }
+  }
+}
