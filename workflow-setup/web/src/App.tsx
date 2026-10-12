@@ -62,6 +62,43 @@ export default function App() {
   const timer = useRef<number | undefined>(undefined);
   const modelRequest = useRef(0);
   const savedBody = useRef<string | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const dialogTrigger = useRef<HTMLElement | null>(null);
+  const activeDialog =
+    definitionName !== null
+      ? 'new-definition'
+      : deleteDefinitionName !== null
+        ? 'delete-definition'
+        : deleteProfileId !== null
+          ? 'delete-profile'
+          : null;
+  const previousDialog = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (activeDialog) {
+      dialogRef.current?.querySelector<HTMLElement>(
+        'input, button, [tabindex]:not([tabindex="-1"])',
+      )?.focus();
+    } else if (previousDialog.current) {
+      dialogTrigger.current?.focus();
+      dialogTrigger.current = null;
+    }
+    previousDialog.current = activeDialog;
+  }, [activeDialog]);
+
+  useEffect(() => {
+    if (!activeDialog) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setDefinitionName(null);
+        setDeleteDefinitionName(null);
+        setDeleteProfileId(null);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [activeDialog]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -258,7 +295,7 @@ export default function App() {
       });
       return;
     }
-    if (newProfile && config?.profiles[id]) {
+    if (config?.profiles[id] && (newProfile || id !== editing)) {
       setFieldErrors({ "profile.id": "That profile ID is already in use." });
       return;
     }
@@ -666,7 +703,8 @@ export default function App() {
                                   className="icon-button danger"
                                   aria-label={`Delete ${id}`}
                                   disabled={config.defaultProfiles[role] === id}
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    dialogTrigger.current = e.currentTarget;
                                     setDeleteProfileId(id);
                                   }}
                                 >
@@ -847,7 +885,13 @@ export default function App() {
                 <h2>Agent definitions</h2>
                 <p>Instructions that are loaded when an agent starts.</p>
               </div>
-              <button className="button primary" onClick={createDefinition}>
+              <button
+                className="button primary"
+                onClick={(e) => {
+                  dialogTrigger.current = e.currentTarget;
+                  createDefinition();
+                }}
+              >
                 ＋ New definition
               </button>
             </div>
@@ -870,7 +914,10 @@ export default function App() {
                     {!d.builtin && (
                       <button
                         className="icon-button danger"
-                        onClick={() => setDeleteDefinitionName(d.name)}
+                        onClick={(e) => {
+                          dialogTrigger.current = e.currentTarget;
+                          setDeleteDefinitionName(d.name);
+                        }}
                       >
                         Delete
                       </button>
@@ -1170,18 +1217,28 @@ export default function App() {
         </div>
       )}
       {definitionName !== null && (
-        <div className="scrim" role="presentation">
+        <div
+          className="scrim"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setDefinitionName(null);
+          }}
+        >
           <section
+            ref={dialogRef}
             className="confirm-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-definition-title"
+            aria-describedby="new-definition-description"
           >
             <h2 id="new-definition-title">New definition</h2>
+            <p id="new-definition-description" className="sr-only">
+              Choose a filename for the new agent definition.
+            </p>
             <label className="form-field">
               <span>Filename</span>
               <input
-                autoFocus
                 value={definitionName}
                 onChange={(e) => setDefinitionName(e.target.value)}
                 placeholder="design-review.md"
@@ -1205,14 +1262,23 @@ export default function App() {
         </div>
       )}
       {deleteDefinitionName && (
-        <div className="scrim" role="presentation">
+        <div
+          className="scrim"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setDeleteDefinitionName(null);
+          }}
+        >
           <section
+            ref={dialogRef}
             className="confirm-dialog"
             role="alertdialog"
             aria-modal="true"
+            aria-labelledby="delete-definition-title"
+            aria-describedby="delete-definition-description"
           >
-            <h2>Delete definition?</h2>
-            <p>Delete {deleteDefinitionName}?</p>
+            <h2 id="delete-definition-title">Delete definition?</h2>
+            <p id="delete-definition-description">Delete {deleteDefinitionName}?</p>
             <footer className="drawer-footer">
               <button
                 className="button secondary"
@@ -1231,14 +1297,25 @@ export default function App() {
         </div>
       )}
       {deleteProfileId && (
-        <div className="scrim" role="presentation">
+        <div
+          className="scrim"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setDeleteProfileId(null);
+          }}
+        >
           <section
+            ref={dialogRef}
             className="confirm-dialog"
             role="alertdialog"
             aria-modal="true"
+            aria-labelledby="delete-profile-title"
+            aria-describedby="delete-profile-description"
           >
-            <h2>Delete profile?</h2>
-            <p>Delete {deleteProfileId} from the draft?</p>
+            <h2 id="delete-profile-title">Delete profile?</h2>
+            <p id="delete-profile-description">
+              Delete {deleteProfileId} from the draft?
+            </p>
             <footer className="drawer-footer">
               <button
                 className="button secondary"
