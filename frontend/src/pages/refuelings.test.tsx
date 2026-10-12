@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthProvider';
@@ -40,6 +40,9 @@ describe('Refuelings page', () => {
     await waitFor(() => {
       expect(screen.getByText(/no refuelings found/i)).toBeInTheDocument();
     });
+    expect(screen.getAllByTestId('summary-card')).toHaveLength(7);
+    expect(screen.getByText('Avg price/L').parentElement).toHaveTextContent('—');
+    expect(screen.getByText('Avg consumption').parentElement).toHaveTextContent('—');
   });
 
   it('lists refuelings and allows deleting', async () => {
@@ -62,6 +65,8 @@ describe('Refuelings page', () => {
     await waitFor(() => {
       expect(screen.getByText('First fill')).toBeInTheDocument();
     });
+    expect(screen.getByText('Refuelings count').parentElement).toHaveTextContent('1');
+    expect(screen.getByText('Total cost').parentElement).toHaveTextContent('60.00');
 
     fireEvent.click(screen.getByText('Delete'));
 
@@ -96,7 +101,7 @@ describe('Refuelings page', () => {
       expect(screen.getByText('2026-01-01')).toBeInTheDocument();
     });
     expect(screen.getByRole('link', { name: /add refueling/i })).toHaveAttribute('href', '/cars/1/refuelings/new');
-    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('—')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Delete'));
     fireEvent.click(screen.getByText('Cancel'));
