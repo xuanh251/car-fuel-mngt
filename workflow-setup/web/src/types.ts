@@ -78,7 +78,7 @@ export interface Config {
   routing: RoutingRule[];
 }
 export interface ConfigResponse extends Config {
-  configSource: string;
+  configSource: "missing" | "workflow.json" | "migrated";
   warnings?: Record<string, string>;
 }
 export type ConfigBody = Omit<
@@ -87,11 +87,12 @@ export type ConfigBody = Omit<
 >;
 export interface Status {
   herdrDir: string;
-  configSource: string;
+  configSource: "missing" | "workflow.json" | "migrated";
   configPath: string;
 }
 export interface ApiError {
   error: string;
   message: string;
   fields?: Record<string, string>;
+  defaults?: ConfigResponse;
 }
