@@ -1,166 +1,100 @@
-# herdr multi-agent team
+# Herdr multi-agent team protocol
 
-The orchestrator is the current agent: the Claude session in your own herdr pane (`HERDR_ENV=1`).
-It does not get a new tab, and no script runs the team. It starts the role agents, routes their
-messages, asks the human, and ends the run.
+This repository supports several concurrent tech leads. Each tech lead owns its own backend,
+frontend, and QA instances. The orchestrator is the human-facing session and is responsible for
+starting/stopping instances, creating worktrees, maintaining each task roster, and routing every
+message. The `herdr` CLI is the runtime; this protocol does not claim that the CLI enforces
+owner-scoped routing by itself.
 
-Each role runs as its own herdr agent in its own tab. Each role picks its own agent kind and model,
-so pi, claude, codex, etc. can be mixed.
+## Config and limits
 
-## Chain of command
+- `.herdr/workflow.json` is the local config and is gitignored. `.herdr/workflow.json.example` is
+  the tracked v2 template. On a fresh clone, the setup app can read the example without creating
+  local config; the first save writes a v2 `.herdr/workflow.json`.
+- Config defines reusable profiles and one default profile per role. Multiple profiles may share
+  a role. Runtime instance IDs are separate from profile IDs.
+- Before asking any configuration question, read the tracked `.herdr/workflow.json.example`
+  alongside the task design. Use it as the starting config when local config is absent; ask the
+  human only about genuine unresolved differences.
+- `spawnPolicy.maxTechLeads` limits live tech-lead instances. Each tech lead independently owns
+  up to `maxDevsPerTechLead.backend_dev`, `maxDevsPerTechLead.frontend_dev`, and
+  `maxQaPerTechLead` child instances.
+- Each task run lives under `.herdr/tasks/<task-id>/`. A run has one `team.json`, owned and written
+  only by its orchestrator. It records every instance as `{ "id", "role", "owner", "status",
+  "profile", "worktree", "branch" }`. Tech leads have `owner: null`; each developer and QA
+  instance has exactly one owner, its `tech-lead-N` instance ID.
+- Instance IDs are unique within a task and match `<role>-<positive integer>`: for example
+  `tech-lead-2`, `backend_dev-3`, `frontend_dev-1`, `qa_engineer-2`. Never reuse an ID in a run.
 
-```
-human ◄──► orchestrator (current agent, this pane)
-              │ task
-              ▼
-          tech-lead ──spawn──► backend_dev, frontend_dev
-              ▲                    │  question / report
-              │◄───────────────────┘
-              │ spawn (after both reports)
-              ▼
-          qa_engineer ──verdict──► tech-lead ──fix──► backend_dev / frontend_dev
-              ▲                         │
-              └──────── retest ◄────────┘   (repeat until PASS)
+## Ownership and filesystem
 
-tech-lead ──escalation──► orchestrator ──asks──► human ──decision──► tech-lead
-tech-lead ──complete────► orchestrator ──► run ends
-```
-
-- Devs and QA talk only to `tech-lead`.
-- Only `tech-lead` reaches the orchestrator: `spawn`, `escalation`, `complete`.
-- The orchestrator never decides on its own. Unresolved questions go to the human, in the
-  orchestrator's chat.
-- The orchestrator counts QA verdicts that do not start with `PASS`. After `maxRounds`
-  (workflow.json, default 5) failures, it asks the human whether to continue.
+- The orchestrator writes `team.json`, requirements, designs, and task-level coordination files.
+- Each agent writes only its own worktree and `.herdr/tasks/<task-id>/instances/<instance-id>/`.
+  Each instance folder has its own `outbox/`; messages are named `<instance-id>-<unique>.json`.
+- Agents communicate only along the routes below. Dev and QA instances talk only to their owner
+  tech lead. A tech lead talks only to its owned dev/QA children or the orchestrator.
+- A dev/QA branch is `herdr/<instance-id>-<run-id>`. QA merges only branches belonging to its
+  owner tech lead. Worktrees and run folders are retained for review.
 
 ## Routes
 
-| from                                     | may send to                                              |
-|------------------------------------------|----------------------------------------------------------|
-| tech-lead                                | backend_dev, frontend_dev, qa_engineer, orchestrator     |
-| backend_dev, frontend_dev, qa_engineer   | tech-lead                                                |
-| orchestrator                             | the roles above, as `task`, `answer` or `error`          |
+Routing is fixed. The standalone setup app displays the rules from `route-check.mjs` read-only;
+it cannot change them. Before routing every outbox message, the orchestrator must run:
 
-Only `spawn`, `escalation` and `complete` may go to the orchestrator. A message on a route that is
-not allowed is bounced back to its sender as an `error`.
-
-## Messages
-
-An agent ends its turn after writing one JSON file per message into `<task>/outbox/`,
-named `<role>-<unique>.json`:
-
-```json
-{"to": "tech-lead", "type": "question", "body": "Which auth lib? Need a decision."}
-{"to": "orchestrator", "type": "spawn", "roles": ["backend_dev"], "tasks": {"backend_dev": "<full task, including any fix list>"}}
+```sh
+node .herdr/route-check.mjs <message.json> <task>/team.json [<herdr-dir>/workflow.json]
 ```
 
-Types: `question`, `report`, `finding`, `fix`, `retest`, `verdict`, `answer`, `spawn`,
-`escalation`, `complete`. The orchestrator takes the sender from the file name, applies the routes
-above, and logs every message to `<task>/messages.jsonl`.
+If no local config exists, pass `.herdr/workflow.json.example` as the optional config argument.
+The command prints `{ "ok": true }` on acceptance or an error object and exits nonzero. Do not
+deliver rejected messages; send the sender an `error` using an allowed route.
 
-Messages that arrive while an agent is busy go into its next turn together. Tech-lead keeps its
-context across turns. Dev and QA roles are stopped after their final message, so each spawn starts with
-a fresh context and only what its spawn message and queue carry.
+| Sender | Recipient | Allowed types |
+|---|---|---|
+| `tech-lead-N` | `orchestrator` | `spawn`, `escalation`, `complete` |
+| `tech-lead-N` | dev/QA instance with `owner == tech-lead-N` | `task`, `fix`, `retest`, `answer` |
+| dev/QA instance X | `owner(X)` | `question`, `report`, `finding`, `verdict` |
+| `orchestrator` | a live tech lead or any live roster instance | `task`, `answer`, `error` |
+
+Refuse dev/QA messages to the orchestrator or another lead; tech-lead messages to a non-owned
+instance or another tech lead; messages from stopped/unknown instances; and `spawn` from anyone
+other than a tech lead. For `spawn`, the owner is the sending tech lead; if the message body has
+an `owner` field it must match. Check the live tech-lead ceiling and that lead's per-role child
+ceilings before starting instances. The orchestrator adds each new instance to `team.json` before
+delivering messages to it and marks stopped instances `status: "stopped"`.
 
 ## Orchestrator steps
 
-1. Work in your own herdr pane. That pane is the orchestrator; do not open a tab for it.
-2. Start a run. Pick a task id, a short slug such as `car-fuel-management`, and create `.herdr/tasks/<task-id>/`
-   with `outbox/`, a `requirement.md` copied from the request, and `tabs.json` set to
-   `{"workspace": "<HERDR_WORKSPACE_ID>", "tabs": {}}`. If the folder already exists, pick a new id, or ask the
-   human before reusing it.
-3. Start tech-lead at run start. Start any other role only when tech-lead sends `spawn` for it (step 7).
-   A role with `"worktree": true` gets its own checkout first. A role that already has a worktree from
-   an earlier spawn reuses it, and does not get a new branch:
+1. Create a unique `.herdr/tasks/<task-id>/` with `instances/` and `team.json`; do not reuse a run
+   folder or instance ID. Start the requested number of tech leads, up to the configured ceiling.
+2. Give each tech lead an independent task/design context and a distinct ID. Its work is scoped to
+   the children it owns. Do not share or cross-route another lead's developer or QA instances.
+3. On a tech-lead `spawn` request, validate every requested role against `spawnPolicy`, create
+   distinct child IDs and worktrees, record each owner in `team.json`, then send that child its
+   task. Keep each child connected to exactly one tech lead.
+4. Validate each outbox JSON using `route-check.mjs` before routing. Include the sender instance
+   ID explicitly in the message. Log accepted and rejected messages in the run's message log.
+5. When a child reports done, stop that instance and mark it stopped. A later fix/retest uses a new
+   instance ID unless the runtime explicitly resumes the existing one; never reuse a stopped ID.
+6. QA is started only by its owning tech lead and merges only that lead's dev branches. Continue
+   fix/retest cycles until QA reports `PASS` with no open findings.
+7. An unresolved decision is escalated by the owning tech lead to the orchestrator. The
+   orchestrator asks the human and returns the answer only to that same lead.
+8. A tech lead sends `complete` only after its run is complete. Close only that lead's pane; other
+   tech leads and their task contexts continue independently.
 
-   ```bash
-   herdr worktree create --workspace "$HERDR_WORKSPACE_ID" --branch herdr/<role>-<run-id> --base <main> --label <role> --no-focus
-   herdr agent start <role> --kind <kind> --pane <root_pane_id> --timeout 120000 -- <args>
-   ```
+## Runtime notes
 
-   The worktree opens its own workspace and root pane: use `.result.root_pane.pane_id` for `--pane`
-   and record the tab id in `<task>/tabs.json`. Roles listed in `merge` get those branches merged into the
-   checkout before their first prompt.
-4. Send the turn: `herdr agent prompt <role> "<prompt>" --wait --timeout 1800000`. The prompt is the
-   role file, an environment block, and the inbound messages. The environment block gives the absolute
-   task folder, which replaces `{task}` in the workflow task text. Tech-lead keeps its session, so after its
-   first turn it gets only the environment block and inbound messages. Ephemeral roles start fresh, so
-   every spawn sends the role file again. A turn can take up to 30 minutes, so run it in the background.
-   If `herdr agent get <role>` reports `blocked`, read its pane (`herdr agent read <role>`), then approve
-   or stop.
-5. After each turn, read `<task>/outbox/<role>-*.json`, log each message to `<task>/messages.jsonl`, delete the
-   file, and route it per the table above. A message to a running role goes into its next turn. A
-   message to a stopped role waits in the queue until tech-lead spawns that role.
-6. Stop after the final message. When a dev's turn ends with `report`, or QA's with `verdict`, stop
-   the role: `herdr tab close <tab_id>`, then remove its entry from `<task>/tabs.json`. Keep its worktree and
-   branch. Queued messages for it wait for its next spawn. Tech-lead is not stopped this way.
-7. `spawn` from tech-lead: start each listed role (step 3). Its first turn is the role file, the
-   environment block, and inbound messages: `tasks[role]` from the spawn message if present, else the
-   role's `task` in workflow.json, plus any messages queued for that role.
-8. `escalation`: ask the human in chat. Send the answer to tech-lead as `answer`.
-9. `complete`: close the tech-lead tab (`herdr tab close <tab_id>`) and delete `<task>/tabs.json`. Keep the
-   worktrees and the task folder for review.
+`agent start` accepts positional distinct names plus `--pane`; `worktree create` supports
+`--branch`, `--path`, and `--label` in the installed CLI. Concurrent multi-instance behavior is
+dependent on the herdr runtime and must be verified there. `route-check.mjs` provides a required
+orchestrator check; neither the app nor API can force the orchestrator to run it.
 
-## Run folders
+## CLI discovery notes
 
-Each workflow execution gets one folder, `.herdr/tasks/<task-id>/`. The task id is a short slug picked at run
-start. Everything a run writes lives in that folder:
-
-```
-.herdr/tasks/<task-id>/
-  requirement.md    the request tech-lead reads first
-  design.md         design and ticket list (tech-lead)
-  api.md            API contract summary (backend_dev)
-  qa-report*.md     QA reports, one per round
-  qa-probe*/        QA probe scripts, one folder per round
-  outbox/           message files waiting for the orchestrator
-  messages.jsonl    message log for this run
-  tabs.json         open tabs for this run
-```
-
-Agents write only inside their task folder and their own worktree. `.herdr/tasks/` is gitignored, and so is
-`.herdr/out/` (retired: old runs live under `tasks/`). Run folders are kept after a run for review.
-
-## Tabs and worktrees
-
-Tabs and worktrees are created without focus, so your current pane keeps focus. Tabs go into the
-orchestrator's workspace (`HERDR_WORKSPACE_ID`). Worktree checkouts (`~/.herdr/worktrees/...`) and
-their `herdr/*` branches are not removed automatically; delete them when done. If a run is
-interrupted, close its tabs and delete `<task>/tabs.json`.
-
-## Pick an agent per role
-
-Set `kind` to any value from `herdr agent start --help` and put that CLI's native args in `args`.
-Model flags are passed through after `--`. `cwd` is optional and relative to the project root
-(default `.`).
-
-```json
-"backend_dev": {
-  "kind": "codex",
-  "args": ["--model", "<codex-model-id>"],
-  "prompt": "agents/be.md",
-  "task": "..."
-}
-```
-
-The current kind and args for each role live in `workflow.json`, the source of truth. This README does not repeat them.
-
-Kinds installed on this machine: `pi`, `claude`, `codex`. Check any other kind with `which <cli>`
-before using it.
-
-Leave `args` as `[]` to use the CLI's default model.
-
-### Permissions
-
-Set permission args per role in `workflow.json`. A role with bypass-style args runs commands without approval
-prompts, so the team does not stall. A role without them follows its CLI's own settings; check those before
-running it unattended.
-
-Permission args apply when an agent starts. A running agent keeps the args it started with.
-
-## Notes
-
-- Tab and agent labels are the role names (`tech-lead`, `backend_dev`, …). A name is unavailable
-  while an earlier agent with that name is still running, so only run one team at a time.
-- `workflow-stale.json` is an old config and is unused.
-- If no agent has messages in flight and no `complete` arrived, the team is stalled. Ask the human.
+Binary names `claude`, `codex`, and `pi` were verified on the implementation host. Other catalog
+entries (`gemini`, `cursor`, `devin`, `agy`, `cline`, `omp`, `mastracode`, `opencode`, `copilot`,
+`kimi`, `kiro`, `droid`, `amp`, `grok`, `hermes`, `kilo`, `qodercli`, `qwen`, `letta`, `maki`,
+`muse`) use their kind name as a best-effort binary name and remain explicitly unverified. Their
+version flags and model-list behavior are not claimed as verified. Pi model discovery uses the
+locally observed `pi --list-models [search]` table format; failures fall back to an empty list.
