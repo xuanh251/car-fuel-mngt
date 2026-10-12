@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from '../auth/AuthProvider';
@@ -101,7 +101,7 @@ describe('Refuelings page', () => {
       expect(screen.getByText('2026-01-01')).toBeInTheDocument();
     });
     expect(screen.getByRole('link', { name: /add refueling/i })).toHaveAttribute('href', '/cars/1/refuelings/new');
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+    expect(within(screen.getByRole('table')).getByText('—')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Delete'));
     fireEvent.click(screen.getByText('Cancel'));

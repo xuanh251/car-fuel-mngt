@@ -25,6 +25,14 @@ describe('calculateRefuelingStats', () => {
     expect(stats.avgPricePerLiter).toBeCloseTo(80 / 30);
   });
 
+  it('handles 200,000 refuelings when calculating distance', () => {
+    const refuelings = Array.from({ length: 200_000 }, (_, id) =>
+      refueling({ id, odometerKm: id }),
+    );
+
+    expect(calculateRefuelingStats(refuelings)).toMatchObject({ count: 200_000, distanceKm: 199_999 });
+  });
+
   it('calculates full-tank segments including pending non-full fuel and skips pre-anchor fuel', () => {
     const stats = calculateRefuelingStats([
       refueling({ id: 1, date: '2026-01-01', odometerKm: 0, liters: 5, fullTank: false }),

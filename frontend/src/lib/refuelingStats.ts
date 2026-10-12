@@ -14,8 +14,14 @@ export const calculateRefuelingStats = (refuelings: Refueling[]): RefuelingStats
   const count = refuelings.length;
   const totalLiters = refuelings.reduce((sum, refueling) => sum + refueling.liters, 0);
   const totalCost = refuelings.reduce((sum, refueling) => sum + refueling.totalCost, 0);
-  const odometers = refuelings.map((refueling) => refueling.odometerKm);
-  const distanceKm = count < 2 ? 0 : Math.max(...odometers) - Math.min(...odometers);
+  const { minOdometer, maxOdometer } = refuelings.reduce(
+    (range, refueling) => ({
+      minOdometer: Math.min(range.minOdometer, refueling.odometerKm),
+      maxOdometer: Math.max(range.maxOdometer, refueling.odometerKm),
+    }),
+    { minOdometer: Infinity, maxOdometer: -Infinity },
+  );
+  const distanceKm = count < 2 ? 0 : maxOdometer - minOdometer;
 
   const sorted = [...refuelings].sort((a, b) =>
     a.date.localeCompare(b.date) || a.odometerKm - b.odometerKm || a.id - b.id,
