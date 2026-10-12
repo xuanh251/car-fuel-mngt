@@ -1,12 +1,112 @@
 :root {
-  --bg: #f8fafc;
-  --text: #1e293b;
+  --ink: #192327;
+  --muted: #77848a;
+  --bg: #f5f7f8;
+  --line: #e6ebed;
+  --green: #147d67;
+  --green-dark: #0d6653;
+  --pale: #eaf5f1;
+  --white: #fff;
+  --shadow: 0 4px 18px #223b4310;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  min-width: 320px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
   background: var(--bg);
-  color: var(--text);
+  color: var(--ink);
   line-height: 1.5;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.ant-typography h1,
+.ant-typography h2,
+.ant-typography h3,
+.ant-typography h4,
+.ant-typography h5 {
+  font-family: 'Manrope', sans-serif;
+  color: var(--ink);
+}
+
+.ant-layout,
+.ant-layout-content {
+  background: var(--bg);
+}
+
+.ant-layout-header {
+  box-shadow: var(--shadow);
+}
+
+.ant-menu-horizontal > .ant-menu-item-selected,
+.ant-menu-horizontal > .ant-menu-item:hover {
+  color: var(--green);
+}
+
+.ant-menu-horizontal > .ant-menu-item-selected::after,
+.ant-menu-horizontal > .ant-menu-item:hover::after {
+  border-bottom-color: var(--green);
+}
+
+.ant-menu-horizontal > .ant-menu-item-selected {
+  background: var(--pale);
+  border-radius: 8px 8px 0 0;
+}
+
+.ant-card,
+.summary-tile,
+.monthly-table .ant-table,
+.monthly-table .ant-table-container {
+  border-color: var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.ant-card {
+  background: var(--white);
+}
+
+.summary-card {
+  border-color: var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.summary-card-label {
+  color: var(--muted);
+}
+
+.ant-card-head {
+  border-bottom-color: var(--line);
+}
+
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: var(--pale);
+  color: var(--ink);
+}
+
+.ant-table-wrapper .ant-table-tbody > tr:hover > td {
+  background: var(--pale);
+}
+
+.ant-typography.ant-typography-secondary,
+.ant-form-item-label > label,
+.ant-statistic-title {
+  color: var(--muted);
+}
+
+@media (max-width: 480px) {
+  .ant-layout-header {
+    padding-inline: 12px !important;
+  }
 }
