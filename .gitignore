@@ -10,5 +10,8 @@ playwright-report/
 *.db-shm
 *.db-journal
 .idea/
-.herdr/out/
 .turbo/
+
+# herdr team config (source of truth, local) and run output
+.herdr/workflow.json
+.herdr/tasks/

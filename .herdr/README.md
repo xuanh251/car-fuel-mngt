@@ -143,14 +143,7 @@ Model flags are passed through after `--`. `cwd` is optional and relative to the
 }
 ```
 
-Current setup:
-
-| role         | lifecycle  | kind   | args                                                   |
-|--------------|------------|--------|--------------------------------------------------------|
-| tech-lead    | persistent | claude | `--model haiku --permission-mode bypassPermissions`    |
-| backend_dev  | ephemeral  | claude | `--model haiku --permission-mode bypassPermissions`    |
-| frontend_dev | ephemeral  | claude | `--model haiku --permission-mode bypassPermissions`    |
-| qa_engineer  | ephemeral  | claude | `--model haiku --permission-mode bypassPermissions`    |
+The current kind and args for each role live in `workflow.json`, the source of truth. This README does not repeat them.
 
 Kinds installed on this machine: `pi`, `claude`, `codex`. Check any other kind with `which <cli>`
 before using it.
@@ -159,9 +152,9 @@ Leave `args` as `[]` to use the CLI's default model.
 
 ### Permissions
 
-Claude roles run with `--permission-mode bypassPermissions`. Agents run commands without approval prompts,
-so the team does not stall. Other kinds (pi, codex) follow their own settings; check them before running them
-unattended.
+Set permission args per role in `workflow.json`. A role with bypass-style args runs commands without approval
+prompts, so the team does not stall. A role without them follows its CLI's own settings; check those before
+running it unattended.
 
 Permission args apply when an agent starts. A running agent keeps the args it started with.
 
