@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "./api";
+import { api } from "./api.js";
 import type {
   Agent,
   Config,
@@ -7,7 +7,7 @@ import type {
   Profile,
   Role,
   Status,
-} from "./types";
+} from "./types.js";
 
 const roles: Role[] = [
   "tech-lead",
@@ -146,7 +146,10 @@ export default function App() {
     if (!config) return null;
     return configBody(config);
   }, [config]);
-  const warningFields = useMemo(() => configWarnings(config), [config]);
+  const warningFields = useMemo(
+    () => configWarnings(config, agents),
+    [config, agents],
+  );
   const isDirty = Boolean(
     dirtyConfig &&
     savedBody.current !== null &&
@@ -172,11 +175,8 @@ export default function App() {
     if (!config || !dirtyConfig) return;
     const invalid: Record<string, string> = {};
     for (const [id, profile] of Object.entries(config.profiles)) {
-      const field = `profiles.${id}.kind`;
       if (!agents.some((agent) => agent.kind === profile.kind)) {
         invalid[`profile-kind:${id}`] = `Profile “${id}” uses unknown agent kind “${profile.kind}”. Choose an available agent kind before saving.`;
-      } else if (warningFields[field]) {
-        invalid[`profile-kind:${id}`] = warningFields[field];
       }
     }
     for (const role of roles)
@@ -226,7 +226,11 @@ export default function App() {
     setNewProfile(false);
     setCloneProfile(null);
     setEditorKind(p?.kind ?? "claude");
-    setEditorModel(p?.model ?? "");
+    setEditorModel(
+      agents.find((a) => a.kind === (p?.kind ?? "claude"))?.modelFlag === null
+        ? ""
+        : (p?.model ?? ""),
+    );
     setEditorMode(p?.mode ?? "default");
     setModelChoices(agents.find((a) => a.kind === p?.kind)?.models ?? []);
     if (p?.kind === "pi") fetchModels("pi", "", true);
@@ -247,7 +251,11 @@ export default function App() {
     setNewProfile(true);
     setCloneProfile(copy(p));
     setEditorKind(p.kind);
-    setEditorModel(p.model ?? "");
+    setEditorModel(
+      agents.find((a) => a.kind === p.kind)?.modelFlag === null
+        ? ""
+        : (p.model ?? ""),
+    );
     setEditorMode(p.mode);
     setModelChoices(agents.find((a) => a.kind === p.kind)?.models ?? []);
     if (p.kind === "pi") fetchModels("pi", "", true);
@@ -1484,22 +1492,22 @@ function configBody(config: ConfigResponse): Config {
   return body;
 }
 
-function configWarnings(config: ConfigResponse | null): Record<string, string> {
+function configWarnings(
+  config: ConfigResponse | null,
+  agents: Agent[],
+): Record<string, string> {
   const warnings = config?.warnings;
   if (!warnings) return {};
-  if (Array.isArray(warnings)) {
-    return Object.fromEntries(
-      warnings.map((warning) =>
-        typeof warning === "string"
-          ? [warning, "This configuration value needs attention."]
-          : [
-              warning.field,
-              warning.message ?? "This configuration value needs attention.",
-            ],
-      ),
-    );
-  }
-  return warnings;
+  return Object.fromEntries(
+    Object.entries(warnings).filter(([field]) => {
+      const match = /^profiles\.([^.]+)\.kind$/.exec(field);
+      if (!match) return false;
+      const profile = config.profiles[match[1]];
+      return Boolean(
+        profile && !agents.some((agent) => agent.kind === profile.kind),
+      );
+    }),
+  );
 }
 
 function normalizeErrors(fields: Record<string, string>) {

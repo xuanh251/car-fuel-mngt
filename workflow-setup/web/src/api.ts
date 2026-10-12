@@ -5,7 +5,7 @@ import type {
   ConfigResponse,
   Definition,
   Status,
-} from "./types";
+} from "./types.js";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
@@ -69,4 +69,4 @@ export type {
   ConfigResponse,
   Definition,
   Status,
-} from "./types";
+} from "./types.js";
