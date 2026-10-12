@@ -3,6 +3,7 @@ import { api } from "./api.js";
 import type {
   Agent,
   Config,
+  ConfigBody,
   ConfigResponse,
   Profile,
   Role,
@@ -196,7 +197,7 @@ export default function App() {
     setNotice(null);
     setFieldErrors({});
     try {
-      const saved = await api.save(dirtyConfig as Config);
+      const saved = await api.save(dirtyConfig);
       savedBody.current = JSON.stringify(configBody(saved));
       setConfig(saved);
       setFieldErrors({});
@@ -1482,7 +1483,7 @@ export default function App() {
   );
 }
 
-function configBody(config: ConfigResponse): Config {
+function configBody(config: ConfigResponse): ConfigBody {
   const {
     configSource: _source,
     routing: _routing,

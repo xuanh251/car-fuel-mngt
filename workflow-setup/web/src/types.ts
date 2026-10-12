@@ -81,6 +81,10 @@ export interface ConfigResponse extends Config {
   configSource: string;
   warnings?: Record<string, string>;
 }
+export type ConfigBody = Omit<
+  ConfigResponse,
+  "configSource" | "routing" | "warnings"
+>;
 export interface Status {
   herdrDir: string;
   configSource: string;
