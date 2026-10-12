@@ -97,7 +97,7 @@ function checkSpawn(message, sender, roster, policy, profiles) {
 async function main() {
   const [messagePath, rosterPath, configPath] = process.argv.slice(2);
   if (!messagePath || !rosterPath) {
-    console.error('Usage: node .herdr/route-check.mjs <message.json> <team.json> [workflow.json]');
+    console.error('Usage: node .herdr/route-check.mjs <outbox>/<sender-instance-id>-<unique>.json <team.json> [workflow.json]');
     process.exitCode = 2; return;
   }
   try {

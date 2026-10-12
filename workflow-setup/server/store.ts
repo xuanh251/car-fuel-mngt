@@ -58,12 +58,12 @@ export interface Definition { name: string; path: string; builtin: boolean }
 export function validateDefinitionName(name: string): void {
   if (!definitionPattern.test(name) || name === ".md") throw Object.assign(new Error("Invalid definition name"), { code: "invalid_definition_name" });
 }
-async function safeDefinitionPath(name: string, requireExists: boolean): Promise<string> {
+async function safeDefinitionPath(name: string, requireExists: boolean, createDirectories = false): Promise<string> {
   validateDefinitionName(name);
-  await mkdir(HERDR_DIR, { recursive: true });
+  if (createDirectories) await mkdir(HERDR_DIR, { recursive: true });
   const herdrRoot = await realpath(HERDR_DIR);
   const expectedAgentsDir = path.join(herdrRoot, "agents");
-  await mkdir(expectedAgentsDir, { recursive: true });
+  if (createDirectories) await mkdir(expectedAgentsDir, { recursive: true });
   const base = await realpath(expectedAgentsDir);
   if (base !== expectedAgentsDir) throw new Error("Agents directory must not be a symlink");
   const target = path.resolve(base, name);
@@ -95,7 +95,7 @@ export async function readDefinition(name: string): Promise<string> {
 export async function writeDefinition(name: string, content: string): Promise<void> {
   const bytes = Buffer.byteLength(content, "utf8");
   if (bytes < 1 || bytes > 65536) throw Object.assign(new Error("Definition content must be 1 to 65536 bytes"), { code: "definition_size" });
-  const filePath = await safeDefinitionPath(name, false);
+  const filePath = await safeDefinitionPath(name, false, true);
   await writeFile(filePath, content, { encoding: "utf8", mode: 0o600 });
 }
 export async function deleteDefinition(name: string): Promise<void> {

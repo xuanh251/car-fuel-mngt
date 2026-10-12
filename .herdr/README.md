@@ -30,7 +30,10 @@ owner-scoped routing by itself.
 
 - The orchestrator writes `team.json`, requirements, designs, and task-level coordination files.
 - Each agent writes only its own worktree and `.herdr/tasks/<task-id>/instances/<instance-id>/`.
-  Each instance folder has its own `outbox/`; messages are named `<instance-id>-<unique>.json`.
+  Each instance folder has its own `outbox/`; every message filename starts with its sender
+  instance ID plus a dash, followed by a unique suffix, for example
+  `tech-lead-1-<unique>.json`. The CLI takes the longest matching roster ID from the filename
+  and refuses the message if a body `sender` or `from` value does not match that ID.
 - Agents communicate only along the routes below. Dev and QA instances talk only to their owner
   tech lead. A tech lead talks only to its owned dev/QA children or the orchestrator.
 - A dev/QA branch is `herdr/<instance-id>-<run-id>`. QA merges only branches belonging to its
