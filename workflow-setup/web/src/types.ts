@@ -79,6 +79,7 @@ export interface Config {
 }
 export interface ConfigResponse extends Config {
   configSource: string;
+  warnings?: string[] | Record<string, string> | { field: string; message?: string }[];
 }
 export interface Status {
   herdrDir: string;

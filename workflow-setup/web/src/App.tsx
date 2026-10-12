@@ -146,6 +146,7 @@ export default function App() {
     if (!config) return null;
     return configBody(config);
   }, [config]);
+  const warningFields = useMemo(() => configWarnings(config), [config]);
   const isDirty = Boolean(
     dirtyConfig &&
     savedBody.current !== null &&
@@ -170,6 +171,14 @@ export default function App() {
   const save = async () => {
     if (!config || !dirtyConfig) return;
     const invalid: Record<string, string> = {};
+    for (const [id, profile] of Object.entries(config.profiles)) {
+      const field = `profiles.${id}.kind`;
+      if (!agents.some((agent) => agent.kind === profile.kind)) {
+        invalid[`profile-kind:${id}`] = `Profile “${id}” uses unknown agent kind “${profile.kind}”. Choose an available agent kind before saving.`;
+      } else if (warningFields[field]) {
+        invalid[`profile-kind:${id}`] = warningFields[field];
+      }
+    }
     for (const role of roles)
       if (!config.profiles[config.defaultProfiles[role]])
         invalid[`defaultProfiles.${role}`] = "Choose a profile for this role.";
@@ -177,7 +186,9 @@ export default function App() {
       setFieldErrors(invalid);
       setNotice({
         kind: "error",
-        text: "Review the highlighted settings before saving.",
+        text: Object.keys(invalid).some((key) => key.startsWith("profile-kind:"))
+          ? "Cannot save: resolve the agent kind warnings in Profiles first."
+          : "Review the highlighted settings before saving.",
       });
       return;
     }
@@ -314,10 +325,14 @@ export default function App() {
       });
       return;
     }
+    const selectedAgent = agents.find((agent) => agent.kind === kind);
     const value: Profile = {
       role,
       kind,
-      model: String(data.get("model") || "") || null,
+      model:
+        selectedAgent?.modelFlag === null
+          ? null
+          : String(data.get("model") || "") || null,
       mode: String(data.get("mode") || "default"),
       extraArgs: String(data.get("extraArgs") || "")
         .split("\n")
@@ -467,6 +482,12 @@ export default function App() {
             <h1>{tab}</h1>
           </div>
           <div className="top-actions">
+            {Object.keys(warningFields).length > 0 && (
+              <span className="warning-count" role="status">
+                {Object.keys(warningFields).length} config warning
+                {Object.keys(warningFields).length === 1 ? "" : "s"}
+              </span>
+            )}
             <span className="source-pill">
               {config.configSource === "example"
                 ? "Using example config"
@@ -483,6 +504,19 @@ export default function App() {
             </button>
           </div>
         </header>
+        {Object.keys(warningFields).length > 0 && (
+          <div className="warning-notice save-warning" role="status">
+            <strong>Save needs attention</strong>
+            <span> Resolve these configuration warnings in Profiles before saving:</span>
+            <ul>
+              {Object.entries(warningFields).map(([field, message]) => (
+                <li key={field}>
+                  <code>{field}</code>: {message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {isDirty && (
           <p className="dirty-indicator" role="status">
             Unsaved changes · profile changes apply to the draft until you save.
@@ -587,6 +621,18 @@ export default function App() {
         )}
         {tab === "Profiles" && (
           <section className="panel">
+            {Object.keys(warningFields).length > 0 && (
+              <div className="warning-notice" role="status">
+                <strong>Configuration needs attention</strong>
+                <ul>
+                  {Object.entries(warningFields).map(([field, message]) => (
+                    <li key={field}>
+                      <code>{field}</code>: {message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="panel-heading">
               <div>
                 <span className="eyebrow">AGENT CONFIGURATION</span>
@@ -649,9 +695,24 @@ export default function App() {
                         {Object.entries(config.profiles)
                           .filter(([, p]) => p.role === role)
                           .map(([id, p]) => (
-                            <tr key={id}>
+                            <tr
+                              key={id}
+                              className={
+                                warningFields[`profiles.${id}.kind`] ||
+                                !agents.some((a) => a.kind === p.kind)
+                                  ? "needs-attention"
+                                  : undefined
+                              }
+                            >
                               <td>
                                 <strong>{id}</strong>
+                                {(warningFields[`profiles.${id}.kind`] ||
+                                  !agents.some((a) => a.kind === p.kind)) && (
+                                  <small className="field-error">
+                                    {warningFields[`profiles.${id}.kind`] ??
+                                      `Unknown agent kind: ${p.kind}`}
+                                  </small>
+                                )}
                                 <small className="sub-cell">
                                   {p.definition}
                                 </small>
@@ -1068,7 +1129,9 @@ export default function App() {
                   onChange={(e) => {
                     const kind = e.target.value as Agent["kind"];
                     setEditorKind(kind);
-                    setEditorModel("");
+                    setModelError(null);
+                    if (agents.find((a) => a.kind === kind)?.modelFlag === null)
+                      setEditorModel("");
                     setEditorMode("default");
                     setModelChoices(
                       agents.find((a) => a.kind === kind)?.models ?? [],
@@ -1095,6 +1158,10 @@ export default function App() {
                   name="model"
                   list="models"
                   value={editorModel}
+                  disabled={
+                    agents.find((a) => a.kind === editorKind)?.modelFlag ===
+                    null
+                  }
                   onChange={(e) => {
                     setEditorModel(e.target.value);
                     fetchModels(editorKind, e.target.value);
@@ -1117,7 +1184,7 @@ export default function App() {
                       ? "Searching Pi models…"
                       : agents.find((a) => a.kind === editorKind)?.modelFlag ===
                           null
-                        ? "This CLI has no model flag; model values go through extra args."
+                        ? "This CLI has no model flag; put model options in Extra arguments."
                         : editorKind === "pi"
                           ? "Pi models are discovered live. You can also enter a custom value."
                           : "Model is not verified for this CLI. Suggestions are fallbacks; custom values are allowed.")}
@@ -1408,8 +1475,31 @@ export default function App() {
 }
 
 function configBody(config: ConfigResponse): Config {
-  const { configSource: _source, routing: _routing, ...body } = config;
+  const {
+    configSource: _source,
+    routing: _routing,
+    warnings: _warnings,
+    ...body
+  } = config;
   return body;
+}
+
+function configWarnings(config: ConfigResponse | null): Record<string, string> {
+  const warnings = config?.warnings;
+  if (!warnings) return {};
+  if (Array.isArray(warnings)) {
+    return Object.fromEntries(
+      warnings.map((warning) =>
+        typeof warning === "string"
+          ? [warning, "This configuration value needs attention."]
+          : [
+              warning.field,
+              warning.message ?? "This configuration value needs attention.",
+            ],
+      ),
+    );
+  }
+  return warnings;
 }
 
 function normalizeErrors(fields: Record<string, string>) {

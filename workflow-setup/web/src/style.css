@@ -550,6 +550,36 @@ td strong {
   display: grid;
   gap: 24px;
 }
+.warning-count {
+  color: #8a5810;
+  background: #fff4dc;
+  border: 1px solid #f0d9a8;
+  border-radius: 20px;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.warning-notice {
+  margin: 0 0 18px;
+  padding: 13px 16px;
+  border: 1px solid #f0d9a8;
+  border-radius: 8px;
+  background: #fff8e9;
+  color: #704b16;
+}
+.save-warning {
+  margin-top: -14px;
+}
+.warning-notice ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.warning-notice li + li {
+  margin-top: 4px;
+}
+.needs-attention {
+  background: #fffaf0;
+}
 .role-group {
   border: 1px solid #e9eeef;
   border-radius: 9px;
