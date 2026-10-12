@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Alert, Button, Empty, Flex, Space, Spin, Table, Typography, type TableColumnsType } from 'antd';
 import { api } from '../api/client';
 import type { Refueling } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { LinkButton } from '../components/LinkButton';
 
 export const Refuelings = () => {
   const { carId } = useParams();
@@ -44,54 +46,51 @@ export const Refuelings = () => {
     }
   };
 
-  if (!carId) return <div className="error">No car selected</div>;
-  if (isLoading) return <div className="loading">Loading...</div>;
-  if (error) return <div className="error">{error}</div>;
+  if (!carId) return <Alert type="error" message="No car selected" showIcon />;
+  if (isLoading) return <Spin />;
+  if (error) return <Alert type="error" message={error} showIcon />;
+
+  const columns: TableColumnsType<Refueling> = [
+    { title: 'Date', dataIndex: 'date', key: 'date' },
+    { title: 'Odometer', key: 'odometer', render: (_, r) => `${r.odometerKm} km` },
+    { title: 'Liters', key: 'liters', render: (_, r) => `${r.liters.toFixed(2)} L` },
+    { title: 'Cost', key: 'cost', render: (_, r) => r.totalCost.toFixed(2) },
+    { title: 'Price/L', key: 'pricePerLiter', responsive: ['md'], render: (_, r) => r.pricePerLiter.toFixed(2) },
+    { title: 'Full Tank', key: 'fullTank', render: (_, r) => (r.fullTank ? 'Yes' : 'No') },
+    { title: 'Notes', key: 'notes', responsive: ['md'], render: (_, r) => r.notes || '—' },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, r) => (
+        <Space size="middle" wrap>
+          <Link to={`/cars/${carId}/refuelings/${r.id}/edit`}>Edit</Link>
+          <Button type="link" danger onClick={() => setDeletingRefueling({ id: r.id, carId: Number(carId) })}>
+            Delete
+          </Button>
+        </Space>
+      ),
+    },
+  ];
 
   return (
     <div className="refuelings-page">
-      {deleteError && <div className="error-message">{deleteError}</div>}
-      <div className="page-header">
-        <h1>Refuelings</h1>
-        <Link to={`/cars/${carId}/refuelings/new`} className="btn-primary">Add Refueling</Link>
-      </div>
+      {deleteError && <Alert type="error" message={deleteError} showIcon style={{ marginBottom: 16 }} />}
+      <Flex justify="space-between" align="center" wrap gap="middle" style={{ marginBottom: 24 }}>
+        <Typography.Title level={2} style={{ margin: 0 }}>Refuelings</Typography.Title>
+        <LinkButton to={`/cars/${carId}/refuelings/new`} type="primary">Add Refueling</LinkButton>
+      </Flex>
 
       {refuelings.length === 0 ? (
-        <div className="empty-state">No refuelings found for this car.</div>
+        <Empty description="No refuelings found for this car." />
       ) : (
-        <div className="table-container">
-          <table className="refuelings-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Odometer</th>
-                <th>Liters</th>
-                <th>Cost</th>
-                <th>Price/L</th>
-                <th>Full Tank</th>
-                <th>Notes</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {refuelings.map((r) => (
-                <tr key={r.id}>
-                  <td data-label="Date">{r.date}</td>
-                  <td data-label="Odometer">{r.odometerKm} km</td>
-                  <td data-label="Liters">{r.liters.toFixed(2)} L</td>
-                  <td data-label="Cost">{r.totalCost.toFixed(2)}</td>
-                  <td data-label="Price/L">{r.pricePerLiter.toFixed(2)}</td>
-                  <td data-label="Full Tank">{r.fullTank ? 'Yes' : 'No'}</td>
-                  <td data-label="Notes">{r.notes || '—'}</td>
-                  <td data-label="Actions" className="actions">
-                    <Link to={`/cars/${carId}/refuelings/${r.id}/edit`}>Edit</Link>
-                    <button onClick={() => setDeletingRefueling({ id: r.id, carId: Number(carId) })}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table
+          rowKey="id"
+          dataSource={refuelings}
+          columns={columns}
+          pagination={false}
+          // On narrow screens the table scrolls inside its own box, not the whole page.
+          scroll={{ x: 'max-content' }}
+        />
       )}
 
       {deletingRefueling && (

@@ -1,4 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+// AntD Select renders options in a dropdown portal; pick one by its visible text.
+// Opens through the selector box: the search input underneath is not clickable itself.
+async function selectAntdOption(page: Page, label: RegExp, optionText: string) {
+  await page.locator('.ant-form-item', { has: page.getByLabel(label) }).locator('.ant-select-selector').click();
+  await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option', { hasText: optionText }).click();
+}
 
 test('full car fuel management flow', async ({ page }) => {
   // 1. Open /, redirected to /login
@@ -19,7 +26,7 @@ test('full car fuel management flow', async ({ page }) => {
   // 3. Add car: name Test Car, fuel Petrol, initial odometer 1000
   await page.getByRole('link', { name: /add car/i }).click();
   await page.getByLabel(/name/i).fill('Test Car');
-  await page.getByLabel(/fuel type/i).selectOption('petrol');
+  await selectAntdOption(page, /fuel type/i, 'Petrol');
   await page.getByLabel(/initial odometer/i).fill('1000');
   await page.getByRole('button', { name: /save car/i }).click();
 
@@ -33,6 +40,7 @@ test('full car fuel management flow', async ({ page }) => {
   // R1: 2026-01-01, 1000 km, 40 L, 60.00, full
   await page.getByRole('link', { name: /add refueling/i }).click();
   await page.getByLabel(/date/i).fill('2026-01-01');
+  await page.getByLabel(/date/i).press('Tab'); // DatePicker commits the typed date on blur
   await page.getByLabel(/odometer/i).fill('1000');
   await page.getByLabel(/liters/i).fill('40');
   await page.getByLabel(/total cost/i).fill('60.00');
@@ -41,6 +49,7 @@ test('full car fuel management flow', async ({ page }) => {
   // R2: 2026-01-15, 1500 km, 30 L, 48.00, full
   await page.getByRole('link', { name: /add refueling/i }).click();
   await page.getByLabel(/date/i).fill('2026-01-15');
+  await page.getByLabel(/date/i).press('Tab');
   await page.getByLabel(/odometer/i).fill('1500');
   await page.getByLabel(/liters/i).fill('30');
   await page.getByLabel(/total cost/i).fill('48.00');
@@ -53,13 +62,15 @@ test('full car fuel management flow', async ({ page }) => {
   // Total spend 108.00; total liters 70.00; refuelings 2; avg price/L 1.54
   // Distance 500 km; avg consumption 6.0 L/100 km; cost/km 0.216
   // Monthly row 2026-01 | 70.00 | 108.00 | 2
-  await expect(page.locator('.summary-tile', { hasText: 'Total Cost' }).locator('.tile-value')).toHaveText('108.00');
-  await expect(page.locator('.summary-tile', { hasText: 'Total Liters' }).locator('.tile-value')).toHaveText('70.00');
-  await expect(page.locator('.summary-tile', { hasText: 'Refuelings' }).locator('.tile-value')).toHaveText('2');
-  await expect(page.locator('.summary-tile', { hasText: 'Avg Price/L' }).locator('.tile-value')).toHaveText('1.54');
-  await expect(page.locator('.summary-tile', { hasText: 'Distance' }).locator('.tile-value')).toHaveText('500 km');
-  await expect(page.locator('.summary-tile', { hasText: 'Consumption' }).locator('.tile-value')).toHaveText('6.0 L/100km');
-  await expect(page.locator('.summary-tile', { hasText: 'Cost/km' }).locator('.tile-value')).toHaveText('0.216');
+  const tileValue = (title: string) =>
+    page.locator('.summary-tile', { hasText: title }).locator('.ant-statistic-content-value');
+  await expect(tileValue('Total Cost')).toHaveText('108.00');
+  await expect(tileValue('Total Liters')).toHaveText('70.00');
+  await expect(tileValue('Refuelings')).toHaveText('2');
+  await expect(tileValue('Avg Price/L')).toHaveText('1.54');
+  await expect(tileValue('Distance')).toHaveText('500 km');
+  await expect(tileValue('Consumption')).toHaveText('6.0 L/100km');
+  await expect(tileValue('Cost/km')).toHaveText('0.216');
   
   const row = page.locator('.monthly-table tbody tr');
   await expect(row).toContainText('2026-01');
@@ -72,6 +83,9 @@ test('full car fuel management flow', async ({ page }) => {
     const innerWidth = await page.evaluate(() => window.innerWidth);
     expect(scrollWidth, `${label}: scrollWidth vs innerWidth`).toBeLessThanOrEqual(innerWidth);
   }
+
+  // Report loaded at phone width: no page-level horizontal scroll.
+  await expectNoHorizontalScroll('report loaded @375px');
 
   // 6. Phone layout: no horizontal scroll on cars, refuelings and report.
   for (const width of [375, 360]) {
@@ -94,7 +108,7 @@ test('full car fuel management flow', async ({ page }) => {
   await page.goto('/cars');
   const testCar = page.locator('.car-item', { hasText: 'Test Car' });
   await testCar.getByRole('button', { name: 'Delete' }).click();
-  const confirm = page.locator('.modal-content');
+  const confirm = page.locator('.ant-modal-content');
   await expect(confirm).toContainText('Deleting this car also deletes its 2 refuelings.');
   await confirm.getByRole('button', { name: 'Confirm' }).click();
   await expect(testCar).toHaveCount(0);

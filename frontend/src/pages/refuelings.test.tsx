@@ -74,4 +74,36 @@ describe('Refuelings page', () => {
       expect(screen.queryByText('First fill')).not.toBeInTheDocument();
     });
   });
+
+  it('links to the add page and closes the confirm dialog on Cancel', async () => {
+    (api.refuelings.list as any).mockResolvedValue({
+      refuelings: [
+        { id: 1, carId: 1, date: '2026-01-01', odometerKm: 1000, liters: 40, totalCost: 60, pricePerLiter: 1.5, fullTank: true, notes: null, createdAt: '', updatedAt: '' },
+      ],
+    });
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/cars/1/refuelings']}>
+          <Routes>
+            <Route path="/cars/:carId/refuelings" element={<Refuelings />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('2026-01-01')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('link', { name: /add refueling/i })).toHaveAttribute('href', '/cars/1/refuelings/new');
+    expect(screen.getByText('—')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Delete'));
+    fireEvent.click(screen.getByText('Cancel'));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/are you sure you want to delete this refueling/i)).not.toBeInTheDocument();
+    });
+    expect(api.refuelings.delete).not.toHaveBeenCalled();
+  });
 });
