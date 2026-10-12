@@ -99,37 +99,46 @@ function checkSpawn(message, sender, roster, policy, profiles) {
   return { ok: true };
 }
 
+function report(result, exitCode) {
+  console.log(JSON.stringify(result));
+  process.exitCode = exitCode;
+}
+// Reads and parses one JSON input. Returns { value } or { failure } (never throws).
+async function readJson(path, error, label) {
+  try { return { value: JSON.parse(await readFile(path, 'utf8')) }; }
+  catch (cause) {
+    return { failure: fail(error, `${label} ${path} could not be read as JSON: ${cause instanceof Error ? cause.message : String(cause)}`) };
+  }
+}
+
 async function main() {
   const [messagePath, rosterPath, configPath] = process.argv.slice(2);
-  if (!messagePath || !rosterPath || !configPath) {
-    console.log(JSON.stringify({ ok: false, error: 'missing_config', message: 'Pass the local .herdr/workflow.json path as the required third argument' }));
-    process.exitCode = 2; return;
+  if (!configPath) return report(fail('missing_config', 'Pass the local .herdr/workflow.json path as the required third argument'), 2);
+  let configText;
+  try { configText = await readFile(configPath, 'utf8'); }
+  catch (error) {
+    if (error?.code === 'ENOENT') return report(fail('missing_config', `Local workflow.json not found at ${configPath}`), 2);
+    return report(fail('invalid_config', `workflow.json could not be read: ${error instanceof Error ? error.message : String(error)}`), 1);
   }
-  try {
-    const [message, roster, configText] = await Promise.all([
-      readFile(messagePath, 'utf8').then(JSON.parse), readFile(rosterPath, 'utf8').then(JSON.parse),
-      readFile(configPath, 'utf8')
-    ]);
-    let config;
-    try { config = JSON.parse(configText); }
-    catch {
-      console.log(JSON.stringify({ ok: false, error: 'invalid_config', message: 'workflow.json must contain valid JSON' }));
-      process.exitCode = 1; return;
-    }
-    const childLimits = config?.spawnPolicy?.maxDevsPerTechLead;
-    if (!config || config.version !== 2 || !config.spawnPolicy || !Number.isFinite(config.spawnPolicy.maxTechLeads) || !childLimits || typeof childLimits !== 'object' || !Number.isFinite(childLimits.backend_dev) || !Number.isFinite(childLimits.frontend_dev) || !Number.isFinite(config.spawnPolicy.maxQaPerTechLead) || !config.profiles || typeof config.profiles !== 'object' || Array.isArray(config.profiles)) {
-      console.log(JSON.stringify({ ok: false, error: 'invalid_config', message: 'workflow.json must be v2 with complete spawnPolicy limits and profiles' }));
-      process.exitCode = 1; return;
-    }
-    const entries = rosterEntries(roster);
-    const base = messagePath.split('/').at(-1);
-    const sender = base.startsWith('orchestrator-') ? 'orchestrator' : entries.map(getId).filter((id) => base.startsWith(id + '-')).sort((a, b) => b.length - a.length)[0];
-    const result = checkMessage(message, roster, config.spawnPolicy, sender, config.profiles);
-    console.log(JSON.stringify(result));
-    if (!result.ok) process.exitCode = 1;
-  } catch (error) {
-    console.log(JSON.stringify({ ok: false, error: 'missing_config', message: error instanceof Error ? error.message : String(error) }));
-    process.exitCode = 2;
+  let config;
+  try { config = JSON.parse(configText); }
+  catch { return report(fail('invalid_config', 'workflow.json must contain valid JSON'), 1); }
+  const childLimits = config?.spawnPolicy?.maxDevsPerTechLead;
+  if (!config || config.version !== 2 || !config.spawnPolicy || !Number.isFinite(config.spawnPolicy.maxTechLeads) || !childLimits || typeof childLimits !== 'object' || !Number.isFinite(childLimits.backend_dev) || !Number.isFinite(childLimits.frontend_dev) || !Number.isFinite(config.spawnPolicy.maxQaPerTechLead) || !config.profiles || typeof config.profiles !== 'object' || Array.isArray(config.profiles)) {
+    return report(fail('invalid_config', 'workflow.json must be v2 with complete spawnPolicy limits and profiles'), 1);
   }
+  if (!messagePath) return report(fail('invalid_message', 'Pass the outbox message path as the first argument'), 1);
+  const messageRead = await readJson(messagePath, 'invalid_message', 'Message');
+  if (messageRead.failure) return report(messageRead.failure, 1);
+  if (!rosterPath) return report(fail('invalid_roster', 'Pass the task team.json path as the second argument'), 1);
+  const rosterRead = await readJson(rosterPath, 'invalid_roster', 'Roster');
+  if (rosterRead.failure) return report(rosterRead.failure, 1);
+  const message = messageRead.value;
+  const roster = rosterRead.value;
+  const entries = rosterEntries(roster);
+  const base = messagePath.split('/').at(-1);
+  const sender = base.startsWith('orchestrator-') ? 'orchestrator' : entries.map(getId).filter((id) => base.startsWith(id + '-')).sort((a, b) => b.length - a.length)[0];
+  const result = checkMessage(message, roster, config.spawnPolicy, sender, config.profiles);
+  report(result, result.ok ? 0 : 1);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

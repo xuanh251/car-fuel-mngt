@@ -41,9 +41,9 @@ missing. Do not pass the example file to route-check.
 | map key / profile ID | map key | Setup UI and orchestrator | Lowercase ID matching `^[a-z][a-z0-9-]{0,39}$`. |
 | `role` | `role` | Orchestrator and route-check | One of the four supported roles. Route-check requires the requested spawn role to match. |
 | `kind` | `kind` | herdr runtime, unverified in repo; setup catalog | Agent implementation kind; must be in the setup catalog. |
-| `lifecycle` | — | herdr runtime, unverified in repo | Kept from a previous profile when saving. New tech-lead profile defaults to `persistent`; other roles to `ephemeral`. |
-| `cwd` | — | herdr runtime, unverified in repo | Kept from a previous profile; new profiles use `.`. |
-| `worktree` | — | herdr runtime, unverified in repo | Kept from a previous profile; new profiles default true except tech-lead. |
+| `lifecycle` | — | herdr runtime, unverified in repo | Required on read (`persistent` or `ephemeral`); the setup server returns `invalid_config` if the key is missing. Setup save keeps it from the previous profile; a new profile defaults to `persistent` for tech-lead and `ephemeral` for other roles. |
+| `cwd` | — | herdr runtime, unverified in repo | Required on read (string); the setup server returns `invalid_config` if the key is missing. Setup save keeps it from the previous profile; a new profile uses `.`. |
+| `worktree` | — | herdr runtime, unverified in repo | Required on read (boolean); the setup server returns `invalid_config` if the key is missing. Setup save keeps it from the previous profile; a new profile defaults to `true` except for tech-lead. |
 | `args` | `model`, `mode`, `extraArgs` | herdr runtime, unverified in repo | CLI arguments persisted as an array. Setup encodes the UI model/mode and extra arguments into this field. |
 | `prompt` | `definition` | herdr runtime, unverified in repo | Definition path such as `agents/be.md`; UI requires the file to exist. |
 | `task` | `task` | herdr runtime, unverified in repo | Profile task text. |
@@ -53,7 +53,9 @@ missing. Do not pass the example file to route-check.
 The setup UI does not persist `model`, `mode`, `extraArgs`, or `definition` under those names:
 `model`, `mode`, and `extraArgs` are encoded into persisted `args`; `definition` maps to `prompt`.
 `lifecycle`, `cwd`, and `worktree` are preserved from the existing profile with the same ID or use
-the new-profile values above.
+the new-profile values above. These defaults apply only when the setup app saves a new or unsaved
+profile. On read they are required in every persisted profile, and no default is applied to a
+hand-written `workflow.json`; the file must contain all three keys.
 
 The server validates persisted config on read and submitted UI config on write. UI validation checks
 strict object shapes, required top-level fields, numeric ranges above, supported roles/kinds/modes,
@@ -62,15 +64,34 @@ profile exists with its matching role. Each definition file must exist on save. 
 are server constants, not values loaded from any file; no profile is pre-created and role defaults
 start blank until assigned.
 
-Unknown JSON keys are rejected by the setup schema. Adding an arbitrary key does not make an agent
-or the herdr runtime execute it. Runtime consumers outside this repository remain unverified.
+Unknown keys are rejected, both on read and on write. An unrecognized top-level key or an
+unrecognized key inside a profile makes the file `invalid_config` (`Unrecognized key`), and the setup
+app does not load it. The accepted top-level keys are `version`, `timeoutMs`, `startTimeoutMs`,
+`maxRounds`, `spawnPolicy`, `defaultProfiles`, and `profiles`; the accepted profile keys are `role`,
+`kind`, `lifecycle`, `cwd`, `worktree`, `args`, `prompt`, and `task`. Adding an arbitrary key does not
+make an agent or the herdr runtime execute it. Runtime consumers outside this repository remain
+unverified.
 
 ## Routing and spawn enforcement
 
 The setup app displays the fixed routing table exported by `.herdr/route-check.mjs`; editing config
 does not change routes. The orchestrator must invoke route-check with the message, run roster, and
 local workflow config. Route-check checks message routing, sender ownership/liveness, requested
-profile existence and role, and the configured live tech-lead and per-owner child ceilings. A missing
-config argument/file is `missing_config`; absent required v2 fields or invalid config is
-`invalid_config`. The orchestrator must not deliver a rejected message and must stop/report if the
-local config cannot be supplied.
+profile existence and role, and the configured live tech-lead and per-owner child ceilings. The
+orchestrator must not deliver a rejected message and must stop/report if the local config cannot be
+supplied.
+
+Route-check prints one JSON object on stdout. Error codes and exit codes:
+
+| `error` | Exit code | Raised when |
+| --- | --- | --- |
+| `missing_config` | 2 | The config argument is absent, or the local `workflow.json` path does not exist. |
+| `invalid_config` | 1 | `workflow.json` is malformed JSON, cannot be read for another reason, or is not v2 with the required `spawnPolicy` numbers and a `profiles` object. Route-check does not check per-profile keys; the setup server does. |
+| `invalid_message` | 1 | The message argument is absent, the message file cannot be read, or it is malformed JSON. |
+| `invalid_roster` | 1 | The roster argument is absent, the `team.json` file cannot be read, or it is malformed JSON. |
+| any other code from `checkMessage` (for example `sender_mismatch`, `route_refused`, `owner_mismatch`, `spawn_limit`, `invalid_spawn`) | 1 | Routing or spawn refusal after all inputs were read. |
+| (`ok: true`) | 0 | The message is allowed. |
+
+Inputs are read in this order: config, then message, then roster. A failure on an earlier input is
+reported first. `missing_config` is only for the config file; a malformed message or roster never
+reports `missing_config`.
