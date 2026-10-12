@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Alert, Button, Empty, Flex, Space, Spin, Table, Typography, type TableColumnsType } from 'antd';
 import { api } from '../api/client';
 import type { Car } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { LinkButton } from '../components/LinkButton';
+
+const formatDetails = (car: Car) =>
+  [car.make, car.model, car.year ? `${car.year}` : null].filter(Boolean).join(' ');
 
 export const Cars = () => {
   const [cars, setCars] = useState<Car[]>([]);
@@ -42,38 +47,43 @@ export const Cars = () => {
     }
   };
 
-  if (isLoading) return <div className="loading">Loading...</div>;
-  if (error) return <div className="error">{error}</div>;
+  if (isLoading) return <Spin />;
+  if (error) return <Alert type="error" message={error} showIcon />;
+
+  const columns: TableColumnsType<Car> = [
+    { title: 'Name', dataIndex: 'name', key: 'name' },
+    { title: 'Details', key: 'details', responsive: ['sm'], render: (_, car) => formatDetails(car) },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, car) => (
+        <Space size="middle" wrap>
+          <Link to={`/cars/${car.id}/refuelings`}>Refuelings</Link>
+          <Link to={`/cars/${car.id}/edit`}>Edit</Link>
+          <Button type="link" danger onClick={() => setDeletingCar(car)}>Delete</Button>
+        </Space>
+      ),
+    },
+  ];
 
   return (
     <div className="cars-page">
-      {deleteError && <div className="error-message">{deleteError}</div>}
-      <div className="page-header">
-        <h1>My Cars</h1>
-        <Link to="/cars/new" className="btn-primary">Add Car</Link>
-      </div>
+      {deleteError && <Alert type="error" message={deleteError} showIcon style={{ marginBottom: 16 }} />}
+      <Flex justify="space-between" align="center" wrap gap="middle" style={{ marginBottom: 24 }}>
+        <Typography.Title level={2} style={{ margin: 0 }}>My Cars</Typography.Title>
+        <LinkButton to="/cars/new" type="primary">Add Car</LinkButton>
+      </Flex>
 
       {cars.length === 0 ? (
-        <div className="empty-state">You have no cars. Add one to get started!</div>
+        <Empty description="You have no cars. Add one to get started!" />
       ) : (
-        <ul className="cars-list">
-          {cars.map((car) => {
-            const details = [car.make, car.model, car.year ? `${car.year}` : null].filter(Boolean).join(' ');
-            return (
-              <li key={car.id} className="car-item">
-                <div className="car-info">
-                  <strong>{car.name}</strong>
-                  {details && <span>{details}</span>}
-                </div>
-                <div className="car-actions">
-                  <Link to={`/cars/${car.id}/refuelings`}>Refuelings</Link>
-                  <Link to={`/cars/${car.id}/edit`}>Edit</Link>
-                  <button onClick={() => setDeletingCar(car)}>Delete</button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <Table
+          rowKey="id"
+          rowClassName="car-item"
+          dataSource={cars}
+          columns={columns}
+          pagination={false}
+        />
       )}
 
       {deletingCar && (

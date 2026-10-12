@@ -19,6 +19,19 @@ vi.mock('../api/client', async (importOriginal) => {
   };
 });
 
+// DatePicker commits the typed text on Enter. Car Select has no native options:
+// open it, then click the option by its text.
+const typeDate = (label: RegExp, value: string) => {
+  const input = screen.getByLabelText(label);
+  fireEvent.change(input, { target: { value } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+};
+
+const selectCar = async (name: string) => {
+  fireEvent.mouseDown(screen.getByLabelText(/car/i));
+  fireEvent.click(await screen.findByText(name));
+};
+
 describe('Report page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -113,7 +126,7 @@ describe('Report page', () => {
       expect(api.report).toHaveBeenCalledTimes(1);
     });
 
-    fireEvent.change(screen.getByLabelText(/from/i), { target: { value: '2026-01-01' } });
+    typeDate(/from/i, '2026-01-01');
 
     await waitFor(() => {
       expect(api.report).toHaveBeenCalledTimes(2);
@@ -157,7 +170,7 @@ describe('Report page', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('To date cannot be before from date')).toBeInTheDocument();
+      expect(screen.getByText('To date cannot be before from date')).toHaveClass('ant-form-item-explain-error');
     });
     expect(screen.queryByText('from is after to')).not.toBeInTheDocument();
   });
@@ -187,8 +200,8 @@ describe('Report page', () => {
       fields: { from: 'From date cannot be in the future' },
     });
 
-    fireEvent.change(screen.getByLabelText(/from/i), { target: { value: '2026-12-31' } });
-    fireEvent.change(screen.getByLabelText(/to/i), { target: { value: '2026-01-01' } });
+    typeDate(/from/i, '2026-12-31');
+    typeDate(/to/i, '2026-01-01');
 
     await waitFor(() => {
       expect(screen.queryByText('100.00')).not.toBeInTheDocument();
@@ -215,8 +228,7 @@ describe('Report page', () => {
       </AuthProvider>
     );
 
-    await screen.findByRole('option', { name: 'Car B' });
-    fireEvent.change(screen.getByLabelText(/car/i), { target: { value: '2' } });
+    await selectCar('Car B');
 
     const liters = () => screen.getByText('Total Liters').parentElement;
     await waitFor(() => {

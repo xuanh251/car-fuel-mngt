@@ -117,4 +117,59 @@ describe('Cars page', () => {
 
     expect(screen.getByText(/deleting this car also deletes its 0 refuelings/i)).toBeInTheDocument();
   });
+
+  it('closes the confirm dialog on Cancel without deleting', async () => {
+    const mockCars = [
+      { id: 1, name: 'Test Car', make: 'Toyota', model: 'Corolla', year: 2020, refuelingCount: 0 },
+    ];
+    (api.cars.list as any).mockResolvedValue({ cars: mockCars });
+
+    render(
+      <AuthProvider>
+        <MemoryRouter>
+          <Cars />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Car')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Delete'));
+    expect(screen.getByText(/delete "Test Car"?/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Cancel'));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/delete "Test Car"?/i)).not.toBeInTheDocument();
+    });
+    expect(api.cars.delete).not.toHaveBeenCalled();
+  });
+
+  it('shows an alert when delete fails', async () => {
+    const mockCars = [
+      { id: 1, name: 'Test Car', make: 'Toyota', model: 'Corolla', year: 2020, refuelingCount: 0 },
+    ];
+    (api.cars.list as any).mockResolvedValue({ cars: mockCars });
+    (api.cars.delete as any).mockRejectedValue({ message: 'Car is in use' });
+
+    render(
+      <AuthProvider>
+        <MemoryRouter>
+          <Cars />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Car')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Delete'));
+    fireEvent.click(screen.getByText('Confirm'));
+
+    expect(await screen.findByText('Car is in use')).toBeInTheDocument();
+    expect(screen.getByText('Test Car')).toBeInTheDocument();
+  });
 });

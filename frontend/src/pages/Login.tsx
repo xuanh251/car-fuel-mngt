@@ -1,75 +1,67 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { Alert, Button, Card, Form, Input, Typography } from 'antd';
 import { api } from '../api/client';
 import type { ApiError } from '../api/types';
 import { useAuth } from '../auth/AuthProvider';
+import { applyServerErrors } from '../lib/formErrors';
 
 export const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string> | null>(null);
+  const [form] = Form.useForm();
+  const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuth();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setFieldErrors(null);
+  const handleFinish = async (values: { email: string; password: string }) => {
+    setFormError(null);
     setIsSubmitting(true);
 
     try {
-      const response = await api.auth.login({ email, password });
+      const response = await api.auth.login({ email: values.email, password: values.password });
       login(response.user);
       navigate('/cars');
     } catch (e) {
       const err = e as ApiError;
-      setError(err.message);
-      setFieldErrors(err.fields || null);
+      setFormError(applyServerErrors(form, err.fields, err.message));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="auth-page">
-      <h1>Login</h1>
-      <form onSubmit={handleSubmit}>
-        {error && <div className="error-message">{error}</div>}
-        <div className="form-field">
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            aria-invalid={!!fieldErrors?.email}
-            aria-describedby={fieldErrors?.email ? `email-error` : undefined}
-          />
-          {fieldErrors?.email && <span id="email-error" className="field-error">{fieldErrors.email}</span>}
-        </div>
-        <div className="form-field">
-          <label htmlFor="password">Password</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            aria-invalid={!!fieldErrors?.password}
-            aria-describedby={fieldErrors?.password ? `password-error` : undefined}
-          />
-          {fieldErrors?.password && <span id="password-error" className="field-error">{fieldErrors.password}</span>}
-        </div>
-        <button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? 'Logging in...' : 'Login'}
-        </button>
-      </form>
-      <p>
-        Don't have an account? <Link to="/register">Register</Link>
-      </p>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <Card style={{ width: '100%', maxWidth: 400 }}>
+        <Typography.Title level={1} style={{ textAlign: 'center' }}>Login</Typography.Title>
+        {formError && <Alert type="error" message={formError} showIcon style={{ marginBottom: 16 }} />}
+        <Form form={form} name="login" layout="vertical" onFinish={handleFinish}>
+          <Form.Item
+            name="email"
+            label="Email"
+            rules={[
+              { required: true, message: 'Please enter your email' },
+              { type: 'email', message: 'Please enter a valid email' },
+            ]}
+          >
+            <Input type="email" />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            label="Password"
+            rules={[{ required: true, message: 'Please enter your password' }]}
+          >
+            <Input.Password />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" block loading={isSubmitting}>
+              Login
+            </Button>
+          </Form.Item>
+        </Form>
+        <Typography.Paragraph style={{ textAlign: 'center', marginBottom: 0 }}>
+          Don't have an account? <Link to="/register">Register</Link>
+        </Typography.Paragraph>
+      </Card>
     </div>
   );
 };

@@ -1,18 +1,38 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { Dayjs } from 'dayjs';
+import { Alert, Card, Col, DatePicker, Empty, Form, Row, Select, Spin, Statistic, Table, Typography, type TableColumnsType } from 'antd';
 import { api } from '../api/client';
-import type { ReportResponse, Car } from '../api/types';
+import type { ReportResponse, ReportMonthly, Car } from '../api/types';
+import { applyServerErrors } from '../lib/formErrors';
+import { toApiDate } from '../lib/dates';
+
+interface ReportFormValues {
+  carId: string;
+  from: Dayjs | null;
+  to: Dayjs | null;
+}
+
+const INITIAL_FILTERS = { carId: 'all', from: '', to: '' };
+
+const toFilters = (values: ReportFormValues) => ({
+  carId: values.carId,
+  from: toApiDate(values.from),
+  to: toApiDate(values.to),
+});
+
+const monthlyColumns: TableColumnsType<ReportMonthly> = [
+  { title: 'Month', dataIndex: 'month', key: 'month' },
+  { title: 'Liters', key: 'liters', render: (_, m) => m.liters.toFixed(2) },
+  { title: 'Cost', key: 'cost', render: (_, m) => m.cost.toFixed(2) },
+  { title: 'Refuelings', dataIndex: 'refuelingCount', key: 'refuelingCount' },
+];
 
 export const Report = () => {
+  const [form] = Form.useForm<ReportFormValues>();
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string> | null>(null);
   const [cars, setCars] = useState<Car[]>([]);
-  const [filters, setFilters] = useState({
-    carId: 'all',
-    from: '',
-    to: '',
-  });
   const latestRequest = useRef(0);
 
   const loadCars = async () => {
@@ -24,24 +44,24 @@ export const Report = () => {
     }
   };
 
-  const loadReport = async () => {
+  const loadReport = async (filters: typeof INITIAL_FILTERS) => {
     // Responses can arrive out of order. Only the latest request may update the page.
     const requestId = ++latestRequest.current;
     const isStale = () => requestId !== latestRequest.current;
     setIsLoading(true);
     setError(null);
-    setFieldErrors(null);
+    form.setFields([{ name: 'from', errors: [] }, { name: 'to', errors: [] }]);
     try {
       const response = await api.report(filters);
       if (isStale()) return;
       setReport(response);
     } catch (e: any) {
       if (isStale()) return;
+      // Invalid filters: drop the previous report so its totals are not
+      // shown next to the field errors.
+      setReport(null);
       if (e.status === 422) {
-        // Invalid filters: drop the previous report so its totals are not
-        // shown next to the field errors.
-        setReport(null);
-        setFieldErrors(e.fields || null);
+        setError(applyServerErrors(form, e.fields, e.message));
       } else {
         setError(e.message || 'Failed to load report');
       }
@@ -52,15 +72,11 @@ export const Report = () => {
 
   useEffect(() => {
     loadCars();
+    loadReport(INITIAL_FILTERS);
   }, []);
 
-  useEffect(() => {
-    loadReport();
-  }, [filters]);
-
-  const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
-    const { id, value } = e.target;
-    setFilters((prev) => ({ ...prev, [id]: value }));
+  const handleValuesChange = (_: Partial<ReportFormValues>, values: ReportFormValues) => {
+    loadReport(toFilters(values));
   };
 
   const formatMoney = (val: number | null) => val === null ? '—' : val.toFixed(2);
@@ -70,115 +86,74 @@ export const Report = () => {
   const formatConsumption = (val: number | null) => val === null ? '—' : val.toFixed(1);
   const formatCostPerKm = (val: number | null) => val === null ? '—' : val.toFixed(3);
 
+  // Values are pre-formatted strings. Statistic would split numeric-looking
+  // strings into int/decimal spans, so the formatter passes the value through.
+  const tiles = report && [
+    { title: 'Total Cost', value: formatMoney(report.summary.totalCost) },
+    { title: 'Total Liters', value: formatLiters(report.summary.totalLiters) },
+    { title: 'Refuelings', value: String(report.summary.refuelingCount) },
+    { title: 'Avg Price/L', value: formatPricePerL(report.summary.avgPricePerLiter) },
+    { title: 'Distance', value: `${formatKm(report.summary.distanceKm)} km` },
+    { title: 'Consumption', value: `${formatConsumption(report.summary.avgConsumptionLPer100Km)} L/100km` },
+    { title: 'Cost/km', value: formatCostPerKm(report.summary.costPerKm) },
+  ];
+
   return (
     <div className="report-page">
-      <div className="page-header">
-        <h1>Fuel Consumption Report</h1>
-      </div>
+      <Typography.Title level={2}>Fuel Consumption Report</Typography.Title>
 
-      <div className="report-filters">
-        <div className="filter-field">
-          <label htmlFor="carId">Car</label>
-          <select id="carId" value={filters.carId} onChange={handleFilterChange}>
-            <option value="all">All cars</option>
-            {cars.map((car) => (
-              <option key={car.id} value={car.id}>{car.name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="filter-field">
-          <label htmlFor="from">From</label>
-          <input
-            id="from"
-            type="date"
-            value={filters.from}
-            onChange={handleFilterChange}
-            aria-invalid={!!fieldErrors?.from}
-            aria-describedby={fieldErrors?.from ? `from-error` : undefined}
+      <Form
+        form={form}
+        name="report-filters"
+        layout="inline"
+        initialValues={{ carId: 'all' }}
+        onValuesChange={handleValuesChange}
+        style={{ rowGap: 16, marginBottom: 24 }}
+      >
+        <Form.Item name="carId" label="Car">
+          <Select
+            style={{ minWidth: 180 }}
+            options={[
+              { value: 'all', label: 'All cars' },
+              ...cars.map((car) => ({ value: String(car.id), label: car.name })),
+            ]}
           />
-          {fieldErrors?.from && <span id="from-error" className="field-error">{fieldErrors.from}</span>}
-        </div>
-        <div className="filter-field">
-          <label htmlFor="to">To</label>
-          <input
-            id="to"
-            type="date"
-            value={filters.to}
-            onChange={handleFilterChange}
-            aria-invalid={!!fieldErrors?.to}
-            aria-describedby={fieldErrors?.to ? `to-error` : undefined}
-          />
-          {fieldErrors?.to && <span id="to-error" className="field-error">{fieldErrors.to}</span>}
-        </div>
-      </div>
+        </Form.Item>
+        <Form.Item name="from" label="From">
+          <DatePicker format="YYYY-MM-DD" />
+        </Form.Item>
+        <Form.Item name="to" label="To">
+          <DatePicker format="YYYY-MM-DD" />
+        </Form.Item>
+      </Form>
 
-      {isLoading ? (
-        <div className="loading">Loading...</div>
-      ) : error ? (
-        <div className="error">{error}</div>
-      ) : report ? (
-        <>
-          {report.summary.refuelingCount === 0 ? (
-            <div className="empty-state">No data available for the selected filters.</div>
-          ) : (
-            <>
-              <div className="summary-grid">
-                <div className="summary-tile">
-                  <div className="tile-label">Total Cost</div>
-                  <div className="tile-value">{formatMoney(report.summary.totalCost)}</div>
-                </div>
-                <div className="summary-tile">
-                  <div className="tile-label">Total Liters</div>
-                  <div className="tile-value">{formatLiters(report.summary.totalLiters)}</div>
-                </div>
-                <div className="summary-tile">
-                  <div className="tile-label">Refuelings</div>
-                  <div className="tile-value">{report.summary.refuelingCount}</div>
-                </div>
-                <div className="summary-tile">
-                  <div className="tile-label">Avg Price/L</div>
-                  <div className="tile-value">{formatPricePerL(report.summary.avgPricePerLiter)}</div>
-                </div>
-                <div className="summary-tile">
-                  <div className="tile-label">Distance</div>
-                  <div className="tile-value">{formatKm(report.summary.distanceKm)} km</div>
-                </div>
-                <div className="summary-tile">
-                  <div className="tile-label">Consumption</div>
-                  <div className="tile-value">{formatConsumption(report.summary.avgConsumptionLPer100Km)} L/100km</div>
-                </div>
-                <div className="summary-tile">
-                  <div className="tile-label">Cost/km</div>
-                  <div className="tile-value">{formatCostPerKm(report.summary.costPerKm)}</div>
-                </div>
-              </div>
+      <Spin spinning={isLoading}>
+        {error ? (
+          <Alert type="error" message={error} showIcon />
+        ) : report && report.summary.refuelingCount === 0 ? (
+          <Empty description="No data available for the selected filters." />
+        ) : report && tiles ? (
+          <>
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+              {tiles.map((tile) => (
+                <Col xs={12} md={6} key={tile.title}>
+                  <Card size="small" className="summary-tile">
+                    <Statistic title={tile.title} value={tile.value} formatter={(value) => value} />
+                  </Card>
+                </Col>
+              ))}
+            </Row>
 
-              <div className="table-container">
-                <table className="monthly-table">
-                  <thead>
-                    <tr>
-                      <th>Month</th>
-                      <th>Liters</th>
-                      <th>Cost</th>
-                      <th>Refuelings</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.monthly.map((m) => (
-                      <tr key={m.month}>
-                        <td data-label="Month">{m.month}</td>
-                        <td data-label="Liters">{m.liters.toFixed(2)}</td>
-                        <td data-label="Cost">{m.cost.toFixed(2)}</td>
-                        <td data-label="Refuelings">{m.refuelingCount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </>
-      ) : null}
+            <Table
+              className="monthly-table"
+              rowKey="month"
+              dataSource={report.monthly}
+              columns={monthlyColumns}
+              pagination={false}
+            />
+          </>
+        ) : null}
+      </Spin>
     </div>
   );
 };

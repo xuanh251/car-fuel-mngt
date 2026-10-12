@@ -1,4 +1,5 @@
 import React from 'react';
+import { Modal } from 'antd';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -15,18 +16,17 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   title,
   message,
 }) => {
-  if (!isOpen) return null;
-
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <h2>{title}</h2>
-        <p>{message}</p>
-        <div className="modal-actions">
-          <button onClick={onClose} className="btn-secondary">Cancel</button>
-          <button onClick={onConfirm} className="btn-danger">Confirm</button>
-        </div>
-      </div>
-    </div>
+    <Modal
+      open={isOpen}
+      title={title}
+      onOk={onConfirm}
+      onCancel={onClose}
+      okText="Confirm"
+      cancelText="Cancel"
+      okButtonProps={{ danger: true }}
+    >
+      <p>{message}</p>
+    </Modal>
   );
 };

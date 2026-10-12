@@ -78,10 +78,55 @@ describe('auth pages', () => {
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password123' } });
     fireEvent.click(screen.getByRole('button', { name: /register/i }));
 
-    await waitFor(() => {
-      expect(screen.getByText('Registration failed')).toBeInTheDocument();
-      expect(screen.getByText('Email already taken')).toBeInTheDocument();
+    expect(await screen.findByText('Email already taken')).toHaveClass('ant-form-item-explain-error');
+    expect(screen.getByLabelText(/email/i)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText('Registration failed')).not.toBeInTheDocument();
+  });
+
+  it('shows a server error with an unknown field key in the top alert', async () => {
+    (api.auth.register as any).mockRejectedValue({
+      message: 'Registration failed',
+      fields: { unknown: 'Something odd' },
     });
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/register']}>
+          <Routes>
+            <Route path="/register" element={<Register />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@example.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: /register/i }));
+
+    expect(await screen.findByText('Registration failed')).toBeInTheDocument();
+    expect(screen.queryByText('Something odd')).not.toBeInTheDocument();
+  });
+
+  it('shows required and email messages without calling the API', async () => {
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/register']}>
+          <Routes>
+            <Route path="/register" element={<Register />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /register/i }));
+    expect(await screen.findByText('Please enter your email')).toBeInTheDocument();
+    expect(screen.getByText('Please enter your password')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'not-an-email' } });
+    fireEvent.click(screen.getByRole('button', { name: /register/i }));
+    expect(await screen.findByText('Please enter a valid email')).toBeInTheDocument();
+
+    expect(api.auth.register).not.toHaveBeenCalled();
   });
 
   it('logs in successfully and redirects to /cars', async () => {
@@ -132,8 +177,30 @@ describe('auth pages', () => {
     fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
 
-    await waitFor(() => {
-      expect(screen.getByText('Invalid credentials')).toBeInTheDocument();
+    expect(await screen.findByText('Invalid credentials')).toBeInTheDocument();
+  });
+
+  it('shows a server field error on the login form item', async () => {
+    (api.auth.login as any).mockRejectedValue({
+      message: 'Login failed',
+      fields: { password: 'Wrong password' },
     });
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/login']}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@example.com' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    expect(await screen.findByText('Wrong password')).toHaveClass('ant-form-item-explain-error');
+    expect(screen.queryByText('Login failed')).not.toBeInTheDocument();
   });
 });
