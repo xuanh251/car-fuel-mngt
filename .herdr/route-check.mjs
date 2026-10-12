@@ -141,4 +141,7 @@ async function main() {
   const result = checkMessage(message, roster, config.spawnPolicy, sender, config.profiles);
   report(result, result.ok ? 0 : 1);
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try { await main(); }
+  catch (error) { report(fail('internal_error', `route-check failed unexpectedly: ${error instanceof Error ? error.message : String(error)}`), 1); }
+}

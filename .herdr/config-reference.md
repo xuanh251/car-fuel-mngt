@@ -89,6 +89,7 @@ Route-check prints one JSON object on stdout. Error codes and exit codes:
 | `invalid_config` | 1 | `workflow.json` is malformed JSON, cannot be read for another reason, or is not v2 with the required `spawnPolicy` numbers and a `profiles` object. Route-check does not check per-profile keys; the setup server does. |
 | `invalid_message` | 1 | The message argument is absent, the message file cannot be read, or it is malformed JSON. |
 | `invalid_roster` | 1 | The roster argument is absent, the `team.json` file cannot be read, or it is malformed JSON. |
+| `internal_error` | 1 | An unexpected exception occurs in route-check. The message is short; no stack trace is printed. |
 | any other code from `checkMessage` (for example `sender_mismatch`, `route_refused`, `owner_mismatch`, `spawn_limit`, `invalid_spawn`) | 1 | Routing or spawn refusal after all inputs were read. |
 | (`ok: true`) | 0 | The message is allowed. |
 
