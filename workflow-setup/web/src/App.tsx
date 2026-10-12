@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api.js";
 import type {
   Agent,
+  ApiError,
   Config,
   ConfigBody,
   ConfigResponse,
@@ -34,6 +35,7 @@ export default function App() {
     kind: "ok" | "error";
     text: string;
   } | null>(null);
+  const [firstRun, setFirstRun] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [tab, setTab] = useState("Overview");
   const [installedOnly, setInstalledOnly] = useState(false);
@@ -104,17 +106,43 @@ export default function App() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, c, a] = await Promise.all([
-        api.status(),
-        api.config(),
-        api.agents(),
-      ]);
+      const [s, a] = await Promise.all([api.status(), api.agents()]);
       setStatus(s);
-      setConfig(c);
       setAgents(a.kinds);
-      savedBody.current = JSON.stringify(configBody(c));
-      setFieldErrors({});
+      try {
+        const c = await api.config();
+        setConfig(c);
+        savedBody.current = JSON.stringify(configBody(c));
+        setNotice(null);
+        setFirstRun(false);
+        setFieldErrors({});
+      } catch (e) {
+        const apiError = (e as { api?: ApiError }).api;
+        if (apiError?.error === "missing_config" && apiError.defaults) {
+          const defaults = apiError.defaults;
+          setConfig(defaults);
+          savedBody.current = JSON.stringify(configBody(defaults));
+          setNotice(null);
+          setFirstRun(true);
+          setFieldErrors({});
+        } else if (apiError?.error === "invalid_config") {
+          const fields = Object.entries(apiError.fields ?? {}).map(
+            ([field, message]) => `${field}: ${message}`,
+          );
+          setConfig(null);
+          savedBody.current = null;
+          setFirstRun(false);
+          setNotice({
+            kind: "error",
+            text: `Local workflow.json is invalid${fields.length ? `: ${fields.join("; ")}` : "."} Fix the file or remove it to start from the first-run state.`,
+          });
+        } else {
+          throw e;
+        }
+      }
     } catch (e) {
+      setConfig(null);
+      setFirstRun(false);
       setNotice({
         kind: "error",
         text: e instanceof Error ? e.message : "Could not load setup.",
@@ -200,6 +228,7 @@ export default function App() {
       const saved = await api.save(dirtyConfig);
       savedBody.current = JSON.stringify(configBody(saved));
       setConfig(saved);
+      setFirstRun(false);
       setFieldErrors({});
       setUnmappedErrors([]);
       setNotice({ kind: "ok", text: "Settings saved." });
@@ -498,15 +527,15 @@ export default function App() {
               </span>
             )}
             <span className="source-pill">
-              {config.configSource === "example"
-                ? "Using example config"
+              {config.configSource === "missing"
+                ? "Not saved yet"
                 : config.configSource === "migrated"
                   ? "Migrated config"
                   : "Saved config"}
             </span>
             <button
               className="button primary"
-              disabled={saving}
+              disabled={saving || !roles.every((role) => Boolean(config.profiles[config.defaultProfiles[role]]))}
               onClick={() => void save()}
             >
               {saving ? "Saving…" : "Save changes"}
@@ -530,6 +559,12 @@ export default function App() {
           <p className="dirty-indicator" role="status">
             Unsaved changes · profile changes apply to the draft until you save.
           </p>
+        )}
+        {firstRun && (
+          <div className="warning-notice" role="status">
+            No local workflow.json yet. Create a profile for each role, then
+            save to create the local config. The file is gitignored.
+          </div>
         )}
         {unmappedErrors.length > 0 && (
           <div className="error-summary" role="alert">
@@ -886,6 +921,9 @@ export default function App() {
                       })
                     }
                   >
+                    <option value="" disabled>
+                      Not chosen
+                    </option>
                     {Object.entries(config.profiles)
                       .filter(([, p]) => p.role === role)
                       .map(([id]) => (
