@@ -72,13 +72,17 @@ delivering messages to it and marks stopped instances `status: "stopped"`.
 3. On a tech-lead `spawn` request, validate every requested role against `spawnPolicy`, create
    distinct child IDs and worktrees, record each owner in `team.json`, then send that child its
    task. Keep each child connected to exactly one tech lead.
-4. Validate each outbox JSON using `route-check.mjs` before routing. Include the sender instance
-   ID explicitly in the message. Log accepted and rejected messages in the run's message log.
+4. Validate each outbox JSON using `route-check.mjs` before routing. The sender is derived from the
+   outbox filename; any body `sender` or `from` must match. Log accepted and rejected messages.
 5. When a child reports done, stop that instance and mark it stopped. A later fix/retest uses a new
    instance ID unless the runtime explicitly resumes the existing one; never reuse a stopped ID.
-6. QA is started only by its owning tech lead and merges only that lead's dev branches. Continue
+6. QA is started only by its owning tech lead and merges only developer branches whose roster
+   `owner` equals that QA instance's owner. Continue
    fix/retest cycles until QA reports `PASS` with no open findings.
-7. An unresolved decision is escalated by the owning tech lead to the orchestrator. The
+7. Before asking any configuration question, backend_dev, frontend_dev, and qa_engineer read
+   `.herdr/workflow.json.example` as the tracked starting config and compare it with the task design
+   and any local config. Ask only about genuine unresolved differences. An unresolved decision is
+   escalated by the owning tech lead to the orchestrator. The
    orchestrator asks the human and returns the answer only to that same lead.
 8. A tech lead sends `complete` only after its run is complete. Close only that lead's pane; other
    tech leads and their task contexts continue independently.

@@ -27,7 +27,11 @@ export const ConfigInput = z.object({
     else if (profile.role !== role) ctx.addIssue({ code: "custom", path: ["defaultProfiles", role], message: `Default profile '${id}' must have role ${role}` });
   }
   for (const [id, profile] of Object.entries(value.profiles)) {
-    const catalog = CATALOG_BY_KIND.get(profile.kind)!;
+    const catalog = CATALOG_BY_KIND.get(profile.kind);
+    if (!catalog) {
+      ctx.addIssue({ code: "custom", path: ["profiles", id, "kind"], message: "Unknown agent kind" });
+      continue;
+    }
     if (!catalog.modes.some((mode) => mode.value === profile.mode)) ctx.addIssue({ code: "custom", path: ["profiles", id, "mode"], message: `Unsupported mode for ${profile.kind}` });
     if (profile.model && !catalog.modelFlag) {
       // This profile can still pass a model via extra args; model field itself cannot.
@@ -36,6 +40,12 @@ export const ConfigInput = z.object({
   }
 });
 export type ConfigInputValue = z.infer<typeof ConfigInput>;
+
+export function stripDefinitions(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const { definitions: _definitions, ...rest } = value as Record<string, unknown>;
+  return rest;
+}
 
 export function buildStoredConfig(input: ConfigInputValue, current: Record<string, unknown>): Record<string, unknown> {
   const previous = (current.profiles && typeof current.profiles === "object" ? current.profiles : {}) as Record<string, Record<string, unknown>>;

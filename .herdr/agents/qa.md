@@ -9,3 +9,5 @@ Write reports and probes only in your assigned worktree and
 `outbox/`, named `<instance-id>-<unique>.json`, with your instance ID as `sender`. Send a `verdict`
 to your owner, starting with PASS or FAIL and listing findings. Never contact the orchestrator or
 another lead's agents. The orchestrator validates each message with `.herdr/route-check.mjs`.
+
+Before asking any configuration question, read `.herdr/workflow.json.example` and compare it with the task design and any local config. Ask only about genuine unresolved differences.

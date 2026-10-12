@@ -80,11 +80,12 @@ async function safeDefinitionPath(name: string, requireExists: boolean): Promise
   }
 }
 export async function listDefinitions(): Promise<Definition[]> {
-  await mkdir(HERDR_DIR, { recursive: true });
-  const herdrRoot = await realpath(HERDR_DIR);
+  let herdrRoot: string;
+  try { herdrRoot = await realpath(HERDR_DIR); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
   const directory = path.join(herdrRoot, "agents");
-  await mkdir(directory, { recursive: true });
-  if (await realpath(directory) !== directory) throw new Error("Agents directory must not be a symlink");
+  try { if (await realpath(directory) !== directory) throw new Error("Agents directory must not be a symlink"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
   const names = (await readdir(directory)).filter((name) => definitionPattern.test(name)).sort();
   return names.map((name) => ({ name, path: `agents/${name}`, builtin: (BUILTIN_DEFINITIONS as readonly string[]).includes(name) }));
 }

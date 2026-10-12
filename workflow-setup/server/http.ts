@@ -7,7 +7,7 @@ import { CATALOG_BY_KIND, isAgentKind, type AgentKind } from "./catalog.js";
 import { decodeArgs } from "./codec.js";
 import { agentsCatalog, modelsFor } from "./discovery.js";
 import { BUILTIN_DEFINITIONS, configPath, HERDR_DIR, listDefinitions, readConfig, readDefinition, writeConfig, writeDefinition, deleteDefinition } from "./store.js";
-import { buildStoredConfig, ConfigInput } from "./schema.js";
+import { buildStoredConfig, ConfigInput, stripDefinitions } from "./schema.js";
 import { ROUTING_RULES } from "../../.herdr/route-check.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -48,7 +48,9 @@ function schemaFields(issues: Array<{ path: PropertyKey[]; message: string }>): 
 }
 async function sendStatic(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
   if (req.method !== "GET" && req.method !== "HEAD") return fail(res, 404, "not_found", "Route not found");
-  const requested = pathname === "/" ? "index.html" : decodeURIComponent(pathname.slice(1));
+  let requested: string;
+  try { requested = pathname === "/" ? "index.html" : decodeURIComponent(pathname.slice(1)); }
+  catch { return fail(res, 400, "bad_request", "Malformed path encoding"); }
   let filePath = path.resolve(DIST_DIR, requested);
   if (!filePath.startsWith(`${DIST_DIR}${path.sep}`)) return fail(res, 404, "not_found", "File not found");
   try { if (!(await lstat(filePath)).isFile()) throw new Error("not a file"); }
@@ -77,20 +79,22 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
     if (pathname === "/api/agents" && req.method === "GET") return send(res, 200, await agentsCatalog());
     const modelMatch = pathname.match(/^\/api\/agents\/([^/]+)\/models$/);
     if (modelMatch && req.method === "GET") {
-      const kind = decodeURIComponent(modelMatch[1]!);
+      let kind: string;
+      try { kind = decodeURIComponent(modelMatch[1]!); } catch { return fail(res, 400, "bad_request", "Malformed path encoding"); }
       if (!isAgentKind(kind)) return fail(res, 404, "unknown_kind", `Unknown agent kind '${kind}'`);
       const search = searchParams.get("search") || "";
-      if (search.length > 64 || !/^[A-Za-z0-9._:/ -]*$/.test(search)) return fail(res, 422, "validation_failed", "Invalid search", { search: "Use at most 64 letters, digits, spaces, or . _ : / -" });
+      if (search.length > 64 || search.startsWith("-") || !/^[A-Za-z0-9._:/ -]*$/.test(search)) return fail(res, 422, "validation_failed", "Invalid search", { search: "Use at most 64 letters, digits, spaces, or . _ : / -; must not start with -" });
       return send(res, 200, await modelsFor(kind, search));
     }
     if (pathname === "/api/config" && req.method === "GET") {
       const stored = await readConfig();
       const rawProfiles = stored.config.profiles as Record<string, Record<string, unknown>>;
       const profiles: Record<string, unknown> = {};
+      const warnings: Record<string, string> = {};
       for (const [id, profile] of Object.entries(rawProfiles)) {
         const kind = String(profile.kind);
         const catalog = CATALOG_BY_KIND.get(kind as AgentKind);
-        if (!catalog) continue;
+        if (!catalog) { profiles[id] = { role: profile.role, kind, model: null, mode: "default", extraArgs: Array.isArray(profile.args) ? profile.args : [], definition: profile.prompt, task: profile.task }; warnings[`profiles.${id}.kind`] = `Unknown agent kind '${kind}'`; continue; }
         const decoded = decodeArgs(Array.isArray(profile.args) ? profile.args as string[] : [], catalog);
         profiles[id] = { role: profile.role, kind, ...decoded, definition: profile.prompt, task: profile.task };
       }
@@ -98,12 +102,12 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
         configSource: stored.source, version: 2, spawnPolicy: stored.config.spawnPolicy,
         defaultProfiles: stored.config.defaultProfiles, profiles, definitions: await listDefinitions(),
         timeoutMs: stored.config.timeoutMs, startTimeoutMs: stored.config.startTimeoutMs,
-        maxRounds: stored.config.maxRounds, routing: ROUTING_RULES
+        maxRounds: stored.config.maxRounds, routing: ROUTING_RULES, warnings
       });
     }
     if (pathname === "/api/config" && req.method === "PUT") {
       const body = await bodyJson(req);
-      const parsed = ConfigInput.safeParse(body);
+      const parsed = ConfigInput.safeParse(stripDefinitions(body));
       if (!parsed.success) return fail(res, 422, "validation_failed", "Configuration failed validation", schemaFields(parsed.error.issues));
       const present = new Set((await listDefinitions()).map((item) => `agents/${item.name}`));
       const missing: Record<string, string> = {};
@@ -123,7 +127,8 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
     }
     const definitionMatch = pathname.match(/^\/api\/definitions\/([^/]+)$/);
     if (definitionMatch) {
-      const name = decodeURIComponent(definitionMatch[1]!);
+      let name: string;
+      try { name = decodeURIComponent(definitionMatch[1]!); } catch { return fail(res, 400, "bad_request", "Malformed path encoding"); }
       if (req.method === "GET") {
         const content = await readDefinition(name);
         return send(res, 200, { name, path: `agents/${name}`, builtin: (BUILTIN_DEFINITIONS as readonly string[]).includes(name), content });

@@ -11,3 +11,5 @@ When blocked, send a `question` to your owner and wait. When done, send a `repor
 checks. Each message is one JSON file in your own `outbox/`, named
 `<instance-id>-<unique>.json`, with your instance ID as `sender`. The orchestrator validates every
 message using `.herdr/route-check.mjs` before routing it.
+
+Before asking any configuration question, read `.herdr/workflow.json.example` and compare it with the task design and any local config. Ask only about genuine unresolved differences.
