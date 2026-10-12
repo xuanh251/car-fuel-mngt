@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Alert, Button, Empty, Flex, Space, Spin, Table, Typography, type TableColumnsType } from 'antd';
 import { api } from '../api/client';
 import type { Refueling } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LinkButton } from '../components/LinkButton';
+import { SummaryCards } from '../components/SummaryCards';
+import { calculateRefuelingStats } from '../lib/refuelingStats';
 
 export const Refuelings = () => {
   const { carId } = useParams();
@@ -13,6 +15,7 @@ export const Refuelings = () => {
   const [error, setError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingRefueling, setDeletingRefueling] = useState<{id: number, carId: number} | null>(null);
+  const stats = useMemo(() => calculateRefuelingStats(refuelings), [refuelings]);
 
   const loadRefuelings = async () => {
     if (!carId) return;
@@ -79,6 +82,8 @@ export const Refuelings = () => {
         <Typography.Title level={2} style={{ margin: 0 }}>Refuelings</Typography.Title>
         <LinkButton to={`/cars/${carId}/refuelings/new`} type="primary">Add Refueling</LinkButton>
       </Flex>
+
+      <SummaryCards stats={stats} />
 
       {refuelings.length === 0 ? (
         <Empty description="No refuelings found for this car." />

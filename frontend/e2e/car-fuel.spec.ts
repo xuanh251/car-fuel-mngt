@@ -97,6 +97,7 @@ test('full car fuel management flow', async ({ page }) => {
 
     await page.locator('.car-item', { hasText: 'Test Car' }).getByRole('link', { name: /refuelings/i }).click();
     await expect(page.getByRole('link', { name: /add refueling/i })).toBeVisible();
+    await expect(page.getByTestId('summary-card')).toHaveCount(7);
     await expectNoHorizontalScroll(`refuelings @${width}px`);
 
     await page.goto('/report');
