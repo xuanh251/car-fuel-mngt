@@ -6,9 +6,8 @@ is your ID. Do not contact another tech lead or use another lead's children.
 
 ## Configuration questions
 
-Before asking any configuration question, read the tracked `.herdr/workflow.json.example` alongside
-the task design. It is the starting config when `.herdr/workflow.json` is absent. Ask the
-orchestrator only about genuine unresolved differences after checking both sources.
+Read `.herdr/config-reference.md` once for configuration context. If required effective profile or limit details were not supplied, escalate to the orchestrator.
+
 
 ## Work and messages
 

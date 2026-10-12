@@ -8,21 +8,28 @@ owner-scoped routing by itself.
 
 ## Config and limits
 
-- `.herdr/workflow.json` is the local config and is gitignored. `.herdr/workflow.json.example` is
-  the tracked v2 template. On a fresh clone, the setup app can read the example without creating
-  local config; the first save writes a v2 `.herdr/workflow.json`.
+- `.herdr/workflow.json` is the sole runtime config and is gitignored. The tracked
+  `.herdr/workflow.json.example` is an informational teammate template only; it is never a runtime
+  fallback. See [the canonical config reference](config-reference.md) for fields, validation, and
+  runtime consumers.
 - Config defines reusable profiles and one default profile per role. Multiple profiles may share
   a role. Runtime instance IDs are separate from profile IDs.
-- Before asking any configuration question, read the tracked `.herdr/workflow.json.example`
-  alongside the task design. Use it as the starting config when local config is absent; ask the
-  human only about genuine unresolved differences.
+- The orchestrator reads the effective local config in its checkout and passes each agent only the
+  relevant effective profile, limits, and task context. Agents must not expect the ignored file in
+  their worktrees; if required effective details were not supplied, ask the owner.
+- Missing local config is a hard stop for runtime operations. The setup app can create it from its
+  first-run UI defaults; route-check requires the local file and the orchestrator stops and reports
+  when it is absent. Never pass the example file to route-check.
 - `spawnPolicy.maxTechLeads` limits live tech-lead instances. Each tech lead independently owns
   up to `maxDevsPerTechLead.backend_dev`, `maxDevsPerTechLead.frontend_dev`, and
   `maxQaPerTechLead` child instances.
 - Each task run lives under `.herdr/tasks/<task-id>/`. A run has one `team.json`, owned and written
   only by its orchestrator. It records every instance as `{ "id", "role", "owner", "status",
-  "profile", "worktree", "branch" }`. Tech leads have `owner: null`; each developer and QA
-  instance has exactly one owner, its `tech-lead-N` instance ID.
+  "profile", "worktree", "branch", "workspace_id", "tab_id", "pane_id" }`. Tech leads have
+  `owner: null`; each developer and QA instance has exactly one owner, its `tech-lead-N` instance
+  ID. Record all three Herdr location IDs as soon as an agent starts. `pane_id` identifies the
+  agent's terminal; `tab_id` and `workspace_id` are context only and may be shared with the
+  orchestrator or other agents.
 - Instance IDs are unique within a task and match `<role>-<positive integer>`: for example
   `tech-lead-2`, `backend_dev-3`, `frontend_dev-1`, `qa_engineer-2`. Never reuse an ID in a run.
 
@@ -45,12 +52,13 @@ Routing is fixed. The standalone setup app displays the rules from `route-check.
 it cannot change them. Before routing every outbox message, the orchestrator must run:
 
 ```sh
-node .herdr/route-check.mjs <message.json> <task>/team.json [<herdr-dir>/workflow.json]
+node .herdr/route-check.mjs <message.json> <task>/team.json <herdr-dir>/workflow.json
 ```
 
-If no local config exists, pass `.herdr/workflow.json.example` as the optional config argument.
-The command prints `{ "ok": true }` on acceptance or an error object and exits nonzero. Do not
-deliver rejected messages; send the sender an `error` using an allowed route.
+Pass the local `.herdr/workflow.json` as the required config argument. If it is absent, stop and
+report the missing config; never pass `.herdr/workflow.json.example`. The command prints
+`{ "ok": true }` on acceptance or an error object and exits nonzero. Do not deliver rejected
+messages; send the sender an `error` using an allowed route.
 
 | Sender | Recipient | Allowed types |
 |---|---|---|
@@ -70,25 +78,41 @@ delivering messages to it and marks stopped instances `status: "stopped"`.
 
 1. Create a unique `.herdr/tasks/<task-id>/` with `instances/` and `team.json`; do not reuse a run
    folder or instance ID. Start the requested number of tech leads, up to the configured ceiling.
+   Record each started agent's workspace, tab, and pane IDs in its roster entry. Never assume an
+   agent has a dedicated tab: it may share a tab (and workspace) with the orchestrator.
 2. Give each tech lead an independent task/design context and a distinct ID. Its work is scoped to
    the children it owns. Do not share or cross-route another lead's developer or QA instances.
 3. On a tech-lead `spawn` request, validate every requested role against `spawnPolicy`, create
-   distinct child IDs and worktrees, record each owner in `team.json`, then send that child its
-   task. Keep each child connected to exactly one tech lead.
+   distinct child IDs and worktrees, record each owner in `team.json`, start the child and record
+   its workspace, tab, and pane IDs, then send it its task. Keep each child connected to exactly
+   one tech lead.
 4. Validate each outbox JSON using `route-check.mjs` before routing. The sender is derived from the
    outbox filename; any body `sender` or `from` must match. Log accepted and rejected messages.
-5. When a child reports done, stop that instance and mark it stopped. A later fix/retest uses a new
-   instance ID unless the runtime explicitly resumes the existing one; never reuse a stopped ID.
+5. When a child reports done, close only its pane with `herdr pane close <pane_id>`, then mark the
+   instance stopped. A later fix/retest uses a new instance ID unless the runtime explicitly
+   resumes the existing one; never reuse a stopped ID.
 6. QA is started only by its owning tech lead and merges only developer branches whose roster
    `owner` equals that QA instance's owner. Continue
    fix/retest cycles until QA reports `PASS` with no open findings.
-7. Before asking any configuration question, backend_dev, frontend_dev, and qa_engineer read
-   `.herdr/workflow.json.example` as the tracked starting config and compare it with the task design
-   and any local config. Ask only about genuine unresolved differences. An unresolved decision is
-   escalated by the owning tech lead to the orchestrator. The
-   orchestrator asks the human and returns the answer only to that same lead.
-8. A tech lead sends `complete` only after its run is complete. Close only that lead's pane; other
-   tech leads and their task contexts continue independently.
+7. Agents read `.herdr/config-reference.md` once for configuration context. Before asking a
+   configuration question, the orchestrator supplies each agent only its relevant effective
+   profile, limits, and task context. If required details were not supplied, dev/QA asks its owner;
+   a tech lead escalates to the orchestrator. The orchestrator asks the human and returns the answer
+   only to that same lead.
+8. A tech lead sends `complete` only after its run is complete. Close only that lead's pane with
+   `herdr pane close <pane_id>`; other tech leads and their task contexts continue independently.
+
+## Safe agent teardown
+
+- Close an agent's pane, not its tab or workspace. The orchestrator and tech lead can occupy
+  separate panes in the same tab, so `herdr tab close <tab_id>` can also close the orchestrator.
+- Use the instance's recorded `pane_id` as the target. Do not infer a pane from its tab ID, and do
+  not use `herdr workspace close` to stop an agent.
+- After closing the pane, confirm with `herdr pane list` that the orchestrator and other live
+  agents are still present, then update that instance's roster status. Do not close the tab; Herdr
+  manages tabs as panes are removed.
+- At run completion, close each completed agent pane individually. Keep the orchestrator pane and
+  workspace open.
 
 ## Runtime notes
 

@@ -46,6 +46,12 @@ function schemaFields(issues: Array<{ path: PropertyKey[]; message: string }>): 
   for (const issue of issues) fields[issue.path.map(String).join(".")] = issue.message;
   return fields;
 }
+const FIRST_RUN_DEFAULTS = {
+  configSource: "missing", version: 2,
+  spawnPolicy: { maxTechLeads: 3, maxDevsPerTechLead: { backend_dev: 3, frontend_dev: 2 }, maxQaPerTechLead: 2 },
+  defaultProfiles: { "tech-lead": "", backend_dev: "", frontend_dev: "", qa_engineer: "" }, profiles: {},
+  timeoutMs: 1800000, startTimeoutMs: 120000, maxRounds: 5
+};
 async function sendStatic(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
   if (req.method !== "GET" && req.method !== "HEAD") return fail(res, 404, "not_found", "Route not found");
   let requested: string;
@@ -75,7 +81,12 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
   catch { return fail(res, 400, "bad_request", "Invalid request URL"); }
   const { pathname, searchParams } = url;
   try {
-    if (pathname === "/api/status" && req.method === "GET") return send(res, 200, { herdrDir: HERDR_DIR, configSource: (await readConfig()).source, configPath: configPath() });
+    if (pathname === "/api/status" && req.method === "GET") {
+      let configSource = "missing";
+      try { configSource = (await readConfig()).source; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "missing_config") throw error; }
+      return send(res, 200, { herdrDir: HERDR_DIR, configSource, configPath: configPath() });
+    }
     if (pathname === "/api/agents" && req.method === "GET") return send(res, 200, await agentsCatalog());
     const modelMatch = pathname.match(/^\/api\/agents\/([^/]+)\/models$/);
     if (modelMatch && req.method === "GET") {
@@ -87,7 +98,13 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
       return send(res, 200, await modelsFor(kind, search));
     }
     if (pathname === "/api/config" && req.method === "GET") {
-      const stored = await readConfig();
+      let stored;
+      try { stored = await readConfig(); }
+      catch (error) {
+        const err = error as NodeJS.ErrnoException & { fields?: Record<string, string> };
+        if (err.code === "missing_config") return send(res, 409, { error: "missing_config", message: err.message, defaults: { ...FIRST_RUN_DEFAULTS, definitions: await listDefinitions(), routing: ROUTING_RULES, warnings: {} } });
+        throw error;
+      }
       const rawProfiles = stored.config.profiles as Record<string, Record<string, unknown>>;
       const profiles: Record<string, unknown> = {};
       const warnings: Record<string, string> = {};
@@ -113,8 +130,10 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
       const missing: Record<string, string> = {};
       for (const [id, profile] of Object.entries(parsed.data.profiles)) if (!present.has(profile.definition)) missing[`profiles.${id}.definition`] = "Definition does not exist";
       if (Object.keys(missing).length) return fail(res, 422, "validation_failed", "Configuration failed validation", missing);
-      const current = await readConfig();
-      await writeConfig(buildStoredConfig(parsed.data, current.config));
+      let current: Awaited<ReturnType<typeof readConfig>> | undefined;
+      try { current = await readConfig(); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "missing_config") throw error; }
+      await writeConfig(buildStoredConfig(parsed.data, current?.config ?? {}));
       // Return the same decoded representation as GET.
       const saved = await readConfig();
       const rawProfiles = saved.config.profiles as Record<string, Record<string, unknown>>;
@@ -152,6 +171,8 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
     return await sendStatic(req, res, pathname);
   } catch (error) {
     const err = error as NodeJS.ErrnoException & { status?: number; code?: string };
+    if (err.code === "missing_config") return fail(res, 409, "missing_config", err.message);
+    if (err.code === "invalid_config") return send(res, 422, { error: "invalid_config", message: err.message, fields: (err as typeof err & { fields?: Record<string, string> }).fields ?? {} });
     if (err.status) return fail(res, err.status, err.status === 413 ? "body_too_large" : "bad_json", err.message);
     if (err.code === "ENOENT") return fail(res, 404, "not_found", "Definition or resource not found");
     if (err.code === "builtin_definition" || err.code === "definition_in_use") return fail(res, 409, err.code, err.message);

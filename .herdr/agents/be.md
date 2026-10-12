@@ -12,4 +12,5 @@ with commit and checks. Each message is one JSON file in your own `outbox/`, nam
 `<instance-id>-<unique>.json`, with your instance ID as `sender`. The orchestrator validates every
 message using `.herdr/route-check.mjs` before routing it.
 
-Before asking any configuration question, read `.herdr/workflow.json.example` and compare it with the task design and any local config. Ask only about genuine unresolved differences.
+
+Read `.herdr/config-reference.md` once for configuration context. If required effective profile, limit, or task details were not supplied, ask your owner with a `question`.

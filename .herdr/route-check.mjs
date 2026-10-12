@@ -26,7 +26,7 @@ function roleOf(id) {
 function live(item) { return item && item.status !== 'stopped' && item.stopped !== true && item.live !== false; }
 function fail(error, message) { return { ok: false, error, message }; }
 
-export function checkMessage(message, roster, spawnPolicy = {}, filenameSender = undefined, profiles = {}) {
+export function checkMessage(message, roster, spawnPolicy, filenameSender = undefined, profiles) {
   if (!message || typeof message !== 'object') return fail('invalid_message', 'Message must be an object');
   const sender = filenameSender;
   if (message.sender !== undefined && message.sender !== sender) return fail('sender_mismatch', 'Body sender must match outbox filename');
@@ -66,11 +66,13 @@ export function checkMessage(message, roster, spawnPolicy = {}, filenameSender =
 
 function senderOwner(item) { return item?.owner ?? null; }
 function checkSpawn(message, sender, roster, policy, profiles) {
+  if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return fail('invalid_config', 'profiles is required and must be an object');
   const body = message.body && typeof message.body === 'object' ? message.body : {};
   if (body.owner !== undefined && body.owner !== sender) return fail('owner_mismatch', 'Spawn owner must equal the sending tech lead');
   const entries = rosterEntries(roster);
   const liveLeads = entries.filter((entry) => roleOf(getId(entry)) === 'tech-lead' && live(entry)).length;
-  const maxLeads = Number(policy.maxTechLeads ?? 1);
+  const maxLeads = policy?.maxTechLeads;
+  if (!Number.isFinite(maxLeads)) return fail('invalid_config', 'spawnPolicy.maxTechLeads is required and must be numeric');
   const requested = body.instances;
   if (!Array.isArray(requested) || requested.length === 0) return fail('invalid_spawn', 'Spawn must include instances');
   if (requested.some((item) => !item || typeof item !== 'object' || !roles.has(item.role) || typeof item.profile !== 'string' || !Number.isInteger(item.count) || item.count < 1 || typeof item.task !== 'string')) return fail('invalid_spawn', 'Each instance request requires role, profile, positive integer count, and task');
@@ -82,12 +84,15 @@ function checkSpawn(message, sender, roster, policy, profiles) {
     const role = roleOf(getId(entry));
     if (role && role !== 'tech-lead') counts[role] = (counts[role] ?? 0) + 1;
   }
-  const ceilings = policy.maxDevsPerTechLead ?? {};
+  const ceilings = policy.maxDevsPerTechLead;
+  if (!ceilings || typeof ceilings !== 'object') return fail('invalid_config', 'spawnPolicy.maxDevsPerTechLead is required and must be an object');
+  if (!Number.isFinite(policy.maxQaPerTechLead)) return fail('invalid_config', 'spawnPolicy.maxQaPerTechLead is required and must be numeric');
   for (const item of requested) {
     const { role, profile, count } = item;
     if (!profiles[profile] || profiles[profile].role !== role) return fail('invalid_spawn', `Profile '${profile}' is missing or does not match role '${role}'`);
     if (role === 'tech-lead') continue;
-    const limit = role === 'qa_engineer' ? Number(policy.maxQaPerTechLead ?? 0) : Number(ceilings[role] ?? 0);
+    const limit = role === 'qa_engineer' ? policy.maxQaPerTechLead : ceilings[role];
+    if (!Number.isFinite(limit)) return fail('invalid_config', `spawnPolicy.${role === 'qa_engineer' ? 'maxQaPerTechLead' : `maxDevsPerTechLead.${role}`} is required and must be numeric`);
     counts[role] = (counts[role] ?? 0) + count;
     if (counts[role] > limit) return fail('spawn_limit', `Owner '${sender}' exceeds spawn limit for ${role} (${limit})`);
   }
@@ -96,23 +101,34 @@ function checkSpawn(message, sender, roster, policy, profiles) {
 
 async function main() {
   const [messagePath, rosterPath, configPath] = process.argv.slice(2);
-  if (!messagePath || !rosterPath) {
-    console.error('Usage: node .herdr/route-check.mjs <outbox>/<sender-instance-id>-<unique>.json <team.json> [workflow.json]');
+  if (!messagePath || !rosterPath || !configPath) {
+    console.log(JSON.stringify({ ok: false, error: 'missing_config', message: 'Pass the local .herdr/workflow.json path as the required third argument' }));
     process.exitCode = 2; return;
   }
   try {
-    const [message, roster, config] = await Promise.all([
+    const [message, roster, configText] = await Promise.all([
       readFile(messagePath, 'utf8').then(JSON.parse), readFile(rosterPath, 'utf8').then(JSON.parse),
-      configPath ? readFile(configPath, 'utf8').then(JSON.parse) : Promise.resolve({})
+      readFile(configPath, 'utf8')
     ]);
+    let config;
+    try { config = JSON.parse(configText); }
+    catch {
+      console.log(JSON.stringify({ ok: false, error: 'invalid_config', message: 'workflow.json must contain valid JSON' }));
+      process.exitCode = 1; return;
+    }
+    const childLimits = config?.spawnPolicy?.maxDevsPerTechLead;
+    if (!config || config.version !== 2 || !config.spawnPolicy || !Number.isFinite(config.spawnPolicy.maxTechLeads) || !childLimits || typeof childLimits !== 'object' || !Number.isFinite(childLimits.backend_dev) || !Number.isFinite(childLimits.frontend_dev) || !Number.isFinite(config.spawnPolicy.maxQaPerTechLead) || !config.profiles || typeof config.profiles !== 'object' || Array.isArray(config.profiles)) {
+      console.log(JSON.stringify({ ok: false, error: 'invalid_config', message: 'workflow.json must be v2 with complete spawnPolicy limits and profiles' }));
+      process.exitCode = 1; return;
+    }
     const entries = rosterEntries(roster);
     const base = messagePath.split('/').at(-1);
     const sender = base.startsWith('orchestrator-') ? 'orchestrator' : entries.map(getId).filter((id) => base.startsWith(id + '-')).sort((a, b) => b.length - a.length)[0];
-    const result = checkMessage(message, roster, config.spawnPolicy ?? {}, sender, config.profiles ?? {});
+    const result = checkMessage(message, roster, config.spawnPolicy, sender, config.profiles);
     console.log(JSON.stringify(result));
     if (!result.ok) process.exitCode = 1;
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.log(JSON.stringify({ ok: false, error: 'missing_config', message: error instanceof Error ? error.message : String(error) }));
     process.exitCode = 2;
   }
 }

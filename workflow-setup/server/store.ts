@@ -2,47 +2,95 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ConfigInput } from "./schema.js";
+import { CATALOG_BY_KIND } from "./catalog.js";
+import { decodeArgs } from "./codec.js";
 
-export type ConfigSource = "workflow.json" | "example" | "migrated";
+export type ConfigSource = "workflow.json" | "migrated";
 export interface StoredConfig { config: Record<string, unknown>; source: ConfigSource }
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const HERDR_DIR = path.resolve(process.env.HERDR_DIR || path.resolve(here, "../../.herdr"));
 const CONFIG_PATH = path.join(HERDR_DIR, "workflow.json");
-const EXAMPLE_PATH = path.join(HERDR_DIR, "workflow.json.example");
 export const BUILTIN_DEFINITIONS = ["tech-lead.md", "be.md", "fe.md", "qa.md"] as const;
 const definitionPattern = /^[a-z][a-z0-9-]{0,47}\.md$/;
-const DEFAULT_POLICY = { maxTechLeads: 3, maxDevsPerTechLead: { backend_dev: 3, frontend_dev: 2 }, maxQaPerTechLead: 2 };
-
 function migrateV1(value: Record<string, unknown>): Record<string, unknown> {
   if (value.version === 2) return value;
   const roles = value.roles;
   if (!roles || typeof roles !== "object" || Array.isArray(roles)) throw new Error("Invalid workflow configuration: roles must be an object");
   const profiles: Record<string, unknown> = {};
-  const defaults: Record<string, string> = {};
   for (const [role, raw] of Object.entries(roles as Record<string, unknown>)) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const old = raw as Record<string, unknown>;
     const id = role === "backend_dev" ? "backend-dev" : role === "frontend_dev" ? "frontend-dev" : role === "qa_engineer" ? "qa" : role;
-    profiles[id] = { role, kind: old.kind, lifecycle: old.lifecycle, cwd: old.cwd ?? ".", worktree: old.worktree ?? (role !== "tech-lead"), args: old.args ?? [], prompt: old.prompt ?? `agents/${role}.md`, task: old.task ?? "" };
-    defaults[role] = id;
+    profiles[id] = { ...old, role };
   }
-  return {
-    version: 2, timeoutMs: value.timeoutMs ?? 1800000, startTimeoutMs: value.startTimeoutMs ?? 120000,
-    maxRounds: value.maxRounds ?? 5, spawnPolicy: DEFAULT_POLICY,
-    defaultProfiles: defaults, profiles
-  };
+  const result: Record<string, unknown> = { ...value, version: 2, profiles };
+  delete result.roles;
+  return result;
+}
+
+function invalidConfig(fields: Record<string, string>): Error {
+  return Object.assign(new Error("Local workflow.json is invalid"), { code: "invalid_config", fields });
+}
+
+function validateStored(value: Record<string, unknown>): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const top = ["version", "timeoutMs", "startTimeoutMs", "maxRounds", "spawnPolicy", "defaultProfiles", "profiles"];
+  for (const key of top) if (!(key in value)) fields[key] = "Required";
+  for (const key of Object.keys(value)) if (!top.includes(key)) fields[key] = "Unrecognized key";
+  if (Object.keys(fields).length) return fields;
+  const profiles = value.profiles;
+  if (!profiles || typeof profiles !== "object" || Array.isArray(profiles)) return { profiles: "Expected object" };
+  const uiProfiles: Record<string, unknown> = {};
+  for (const [id, raw] of Object.entries(profiles as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) { fields[`profiles.${id}`] = "Expected object"; continue; }
+    const profile = raw as Record<string, unknown>;
+    const required = ["role", "kind", "lifecycle", "cwd", "worktree", "args", "prompt", "task"];
+    for (const key of required) if (!(key in profile)) fields[`profiles.${id}.${key}`] = "Required";
+    for (const key of Object.keys(profile)) if (!required.includes(key)) fields[`profiles.${id}.${key}`] = "Unrecognized key";
+    const catalog = CATALOG_BY_KIND.get(String(profile.kind) as import("./catalog.js").AgentKind);
+    if (!catalog || !Array.isArray(profile.args)) { fields[`profiles.${id}.args`] = "Expected args array and known kind"; continue; }
+    if (!(["persistent", "ephemeral"].includes(String(profile.lifecycle)) && typeof profile.cwd === "string" && typeof profile.worktree === "boolean")) {
+      fields[`profiles.${id}`] = "Invalid persisted lifecycle, cwd, or worktree";
+      continue;
+    }
+    try {
+      uiProfiles[id] = {
+        role: profile.role, kind: profile.kind, ...decodeArgs(profile.args as string[], catalog),
+        definition: profile.prompt, task: profile.task
+      };
+    } catch { fields[`profiles.${id}.args`] = "Invalid arguments"; }
+  }
+  if (Object.keys(fields).length) return fields;
+  const parsed = ConfigInput.safeParse({
+    version: value.version, timeoutMs: value.timeoutMs, startTimeoutMs: value.startTimeoutMs,
+    maxRounds: value.maxRounds, spawnPolicy: value.spawnPolicy, defaultProfiles: value.defaultProfiles,
+    profiles: uiProfiles
+  });
+  if (!parsed.success) for (const issue of parsed.error.issues) fields[issue.path.map(String).join(".")] = issue.message;
+  return fields;
 }
 
 export async function readConfig(): Promise<StoredConfig> {
+  let text: string;
   try {
-    const raw = JSON.parse(await readFile(CONFIG_PATH, "utf8")) as Record<string, unknown>;
-    const migrated = raw.version !== 2;
-    return { config: migrateV1(raw), source: migrated ? "migrated" : "workflow.json" };
+    text = await readFile(CONFIG_PATH, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw Object.assign(new Error(`Local workflow config is missing: ${CONFIG_PATH}`), { code: "missing_config" });
+    throw error;
   }
-  const raw = JSON.parse(await readFile(EXAMPLE_PATH, "utf8")) as Record<string, unknown>;
-  return { config: migrateV1(raw), source: "example" };
+  let raw: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Expected an object");
+    raw = parsed as Record<string, unknown>;
+  } catch { throw invalidConfig({ $: "Must be valid JSON object" }); }
+  const migrated = raw.version !== 2;
+  let config: Record<string, unknown>;
+  try { config = migrateV1(raw); } catch (error) { throw invalidConfig({ roles: (error as Error).message }); }
+  const fields = validateStored(config);
+  if (Object.keys(fields).length) throw invalidConfig(fields);
+  return { config, source: migrated ? "migrated" : "workflow.json" };
 }
 
 export async function writeConfig(config: Record<string, unknown>): Promise<void> {

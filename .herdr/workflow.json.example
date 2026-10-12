@@ -30,7 +30,7 @@
         "bypassPermissions"
       ],
       "prompt": "agents/tech-lead.md",
-      "task": "Read the feature requirement at `{task}/requirement.md`. Produce a concise technical design (stack, data models, key APIs, non-goals, risks) and a flat ticket list. Tag each ticket exactly once as `backend` or `frontend`. Respect the layout constraint in the requirement (backend in `backend/`, frontend in `frontend/`). Do NOT implement anything yet. Write the design doc and ticket list to `{task}/design.md`. Then send a spawn request to the orchestrator for `backend_dev` and `frontend_dev`. Answer their questions yourself when the design decides them; escalate to the orchestrator only what you cannot resolve. When both have reported done, spawn `qa_engineer`. Route QA findings to the dev who owns them: spawn that dev with the fix in its task. Then spawn `qa_engineer` with a retest task. Send `complete` to the orchestrator only after QA reports PASS with no open issues. Before asking any configuration question, read the tracked `.herdr/workflow.json.example` alongside the task design; ask only about genuine unresolved differences."
+      "task": "Read the feature requirement at `{task}/requirement.md`. Produce a concise technical design (stack, data models, key APIs, non-goals, risks) and a flat ticket list. Tag each ticket exactly once as `backend` or `frontend`. Respect the layout constraint in the requirement (backend in `backend/`, frontend in `frontend/`). Do NOT implement anything yet. Write the design doc and ticket list to `{task}/design.md`. Then send a spawn request to the orchestrator for `backend_dev` and `frontend_dev`. Answer their questions yourself when the design decides them; escalate to the orchestrator only what you cannot resolve. When both have reported done, spawn `qa_engineer`. Route QA findings to the dev who owns them: spawn that dev with the fix in its task. Then spawn `qa_engineer` with a retest task. Send `complete` to the orchestrator only after QA reports PASS with no open issues."
     },
     "backend-dev": {
       "role": "backend_dev",
@@ -45,7 +45,7 @@
         "gpt-6-luna"
       ],
       "prompt": "agents/be.md",
-      "task": "Before asking any configuration question, read `.herdr/workflow.json.example` and compare it with the task design and any local config. Ask only about genuine unresolved differences. Read `{task}/design.md`. Take the `backend`-tagged tickets and implement them: production-ready server code, data model, core business logic, and passing unit + integration tests. If the task needs a small frontend scaffold, add only the minimal glue the backend contract implies. Write the API contract summary to `{task}/api.md`. If blocked or unsure, send a `question` to tech-lead and wait for its answer. When the tickets are done and tests pass, commit and send a `report` to tech-lead with a short summary and the test result. A later spawn from tech-lead carries a fix; handle it the same way."
+      "task": "Read `{task}/design.md`. Take the `backend`-tagged tickets and implement them: production-ready server code, data model, core business logic, and passing unit + integration tests. If the task needs a small frontend scaffold, add only the minimal glue the backend contract implies. Write the API contract summary to `{task}/api.md`. If blocked or unsure, send a `question` to tech-lead and wait for its answer. When the tickets are done and tests pass, commit and send a `report` to tech-lead with a short summary and the test result. A later spawn from tech-lead carries a fix; handle it the same way."
     },
     "frontend-dev": {
       "role": "frontend_dev",
@@ -60,7 +60,7 @@
         "gpt-6-luna"
       ],
       "prompt": "agents/fe.md",
-      "task": "Before asking any configuration question, read `.herdr/workflow.json.example` and compare it with the task design and any local config. Ask only about genuine unresolved differences. Read `{task}/design.md` and `{task}/api.md` if it exists. Take the `frontend`-tagged tickets and build a polished, responsive UI wired to the backend APIs. Include component and end-to-end tests covering the main flows. If blocked or unsure, send a `question` to tech-lead and wait for its answer. When builds and tests pass, commit and send a `report` to tech-lead with a short summary and the test result. A later spawn from tech-lead carries a fix; handle it the same way."
+      "task": "Read `{task}/design.md` and `{task}/api.md` if it exists. Take the `frontend`-tagged tickets and build a polished, responsive UI wired to the backend APIs. Include component and end-to-end tests covering the main flows. If blocked or unsure, send a `question` to tech-lead and wait for its answer. When builds and tests pass, commit and send a `report` to tech-lead with a short summary and the test result. A later spawn from tech-lead carries a fix; handle it the same way."
     },
     "qa": {
       "role": "qa_engineer",
@@ -74,7 +74,7 @@
         "bypassPermissions"
       ],
       "prompt": "agents/qa.md",
-      "task": "Before asking any configuration question, read `.herdr/workflow.json.example` and compare it with the task design and any local config. Ask only about genuine unresolved differences. Read `{task}/design.md` for the original requirements. Merge only developer branches whose roster owner equals your owner (`git merge --no-edit <branch>`), then run integration + end-to-end tests. Attack edge cases and invalid inputs. Write every bug with reproduction steps and expected-vs-actual results to `{task}/qa-report.md`. Send a `verdict` to tech-lead whose body starts with PASS or FAIL, followed by the findings. On a spawn for retest, re-merge the branches first, then run the tests again.",
+      "task": "Read `{task}/design.md` for the original requirements. Merge only developer branches whose roster owner equals your owner (`git merge --no-edit <branch>`), then run integration + end-to-end tests. Attack edge cases and invalid inputs. Write every bug with reproduction steps and expected-vs-actual results to `{task}/qa-report.md`. Send a `verdict` to tech-lead whose body starts with PASS or FAIL, followed by the findings. On a spawn for retest, re-merge the branches first, then run the tests again.",
       "worktree": true
     }
   }
