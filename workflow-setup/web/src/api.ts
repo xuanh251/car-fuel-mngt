@@ -1,7 +1,7 @@
 import type {
   Agent,
   ApiError,
-  Config,
+  ConfigBody,
   ConfigResponse,
   Definition,
   Status,
@@ -43,7 +43,7 @@ export const api = {
       `/agents/${encodeURIComponent(kind)}/models?search=${encodeURIComponent(search)}`,
     ),
   config: () => request<ConfigResponse>("/config"),
-  save: (config: Config) =>
+  save: (config: ConfigBody) =>
     request<ConfigResponse>("/config", {
       method: "PUT",
       body: JSON.stringify(config),
