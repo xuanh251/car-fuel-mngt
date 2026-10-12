@@ -17,6 +17,13 @@ this directory; `ALLOWED_ORIGINS` defaults to the loopback origins on ports 4317
 The app has no login: any local process able to reach the service can make changes. Host and
 Origin checks reduce browser CSRF and DNS-rebinding risk, but do not provide authentication.
 
+## Integration verification gap
+
+Backend typechecking can run independently. The production build also requires the frontend-owned
+`index.html` and Vite configuration under `workflow-setup/`; until the frontend branch is
+integrated, `npm run build` cannot verify the complete standalone app. Run the build after
+integration.
+
 On first run, when `.herdr/workflow.json` is absent, the app loads the tracked
 `.herdr/workflow.json.example` and reports `configSource: "example"`. Legacy v1 data is migrated
 in memory; a v2 local config is created only when saved. Agent definitions are restricted to
